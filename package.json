@@ -5,6 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
+    "deploy": "node src/deploy-commands.js",
     "postinstall": "node setup.js"
   },
   "engines": { "node": "16.x" },

@@ -6,11 +6,9 @@ const { startVoiceRecognition } = require('../voice/VoiceRecognition');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('tocar')
-    .setDescription('Toca uma música — YouTube, Spotify ou nome')
+    .setDescription('Toca uma musica — YouTube, Spotify ou nome')
     .addStringOption(opt =>
-      opt.setName('musica')
-        .setDescription('Nome, link do YouTube ou link do Spotify')
-        .setRequired(true)
+      opt.setName('musica').setDescription('Nome, link do YouTube ou Spotify').setRequired(true)
     ),
 
   async execute(interaction, client) {
@@ -20,69 +18,45 @@ module.exports = {
     const member       = interaction.member;
     const voiceChannel = member.voice?.channel;
 
-    if (!voiceChannel) {
-      return interaction.editReply('❌ Entre em um **canal de voz** primeiro!');
-    }
+    if (!voiceChannel) return interaction.editReply('Entre em um **canal de voz** primeiro!');
 
-    // Detecta fonte para emoji
     const isSpotify = query.includes('spotify.com');
     const isYoutube = query.includes('youtube.com') || query.includes('youtu.be');
     const emoji     = isSpotify ? '🟢' : isYoutube ? '🔴' : '🔍';
     const label     = isSpotify ? 'Spotify' : isYoutube ? 'YouTube' : 'Buscando';
 
-    await interaction.editReply(`${emoji} ${label}: **${query}**...`);
+    await interaction.editReply(emoji + ' ' + label + ': **' + query + '**...');
 
     const track = await searchTrack(query, member.displayName).catch(() => null);
-
-    if (!track) {
-      return interaction.editReply(
-        `❌ Não encontrei nada para: **${query}**\n> Tente o nome da música, ex: \`/tocar Shape of You\``
-      );
-    }
+    if (!track) return interaction.editReply('Nao encontrei nada para: **' + query + '**\n> Tente o nome da musica, ex: `/tocar Shape of You`');
 
     const guildId = interaction.guildId;
     let queue     = client.musicQueues.get(guildId);
 
-    // ─── Detecta se o bot foi desconectado/kickado ──────────────────────────
+    // Limpa fila se bot foi desconectado
     if (queue) {
       const status = queue.connection?.state?.status;
-      const foiDesconectado =
-        status === VoiceConnectionStatus.Destroyed ||
-        status === VoiceConnectionStatus.Disconnected ||
-        !queue.connection;
-
-      if (foiDesconectado) {
-        // Avisa no chat e limpa a fila antiga
-        interaction.channel.send(
-          '🔌 **Voxara foi desconectado do canal de voz.**\n' +
-          '> Entrando novamente para continuar...'
-        );
+      if (status === VoiceConnectionStatus.Destroyed || status === VoiceConnectionStatus.Disconnected) {
+        interaction.channel.send('Voxara foi desconectado. Entrando novamente...');
         queue.destroy();
         client.musicQueues.delete(guildId);
         queue = null;
       }
     }
 
-    // ─── Conecta ao canal de voz ────────────────────────────────────────────
     if (!queue) {
       const connection = joinVoiceChannel({
-        channelId:      voiceChannel.id,
-        guildId:        voiceChannel.guild.id,
+        channelId: voiceChannel.id, guildId: voiceChannel.guild.id,
         adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-        selfDeaf:       false,
-        selfMute:       false,
+        selfDeaf: false, selfMute: false,
       });
 
-      connection.on('error', err => console.error('Erro de voz:', err.message));
+      connection.on('error', err => console.error('Voz erro:', err.message));
 
-      // Quando destruída — avisa no chat e limpa o map
       connection.on(VoiceConnectionStatus.Destroyed, () => {
         const q = client.musicQueues.get(guildId);
         if (q) {
-          q.textChannel.send(
-            '🔌 **Voxara foi desconectado do canal de voz.**\n' +
-            '> Use `/tocar` para chamar novamente!'
-          );
+          q.textChannel.send('Voxara foi desconectado. Use `/tocar` para chamar novamente!');
           q.destroy();
         }
         client.musicQueues.delete(guildId);
@@ -90,26 +64,19 @@ module.exports = {
 
       queue = new MusicQueue(guildId, connection, interaction.channel);
       client.musicQueues.set(guildId, queue);
-
       startVoiceRecognition(connection, client, guildId, interaction.channel);
 
       interaction.channel.send(
-        '🎙️ **Voxara entrou no canal!**\n' +
-        '> Fale **"música"** + comando para controlar por voz:\n' +
-        '> *"música pausar"* • *"música pular"* • *"música tocar [nome]"*'
+        'Voxara entrou no canal!\n> Fale **"musica"** + comando:\n> *"musica pausar"* • *"musica pular"* • *"musica tocar [nome]"*'
       );
     }
 
-    // ─── Adiciona à fila ────────────────────────────────────────────────────
     await queue.addTrack(track);
 
     if (queue.current?.url !== track.url) {
-      await interaction.editReply(
-        `✅ **${track.title}** adicionada à fila!\n` +
-        `> ⏱️ ${track.duration} | 📋 Posição: ${queue.tracks.length}`
-      );
+      await interaction.editReply('**' + track.title + '** adicionada a fila! | ' + track.duration + ' | Posicao: ' + queue.tracks.length);
     } else {
-      await interaction.editReply(`🎵 Tocando agora: **${track.title}**`);
+      await interaction.editReply('Tocando agora: **' + track.title + '**');
     }
   },
 };
