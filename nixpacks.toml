@@ -1,4 +1,7 @@
-# nixpacks.toml - força Node 16 + dependências para Vosk funcionar
+# nixpacks.toml - pin nixpkgs antigo com Node 16 disponível (nixos-23.05)
+
+[nixpacks]
+nixpkgsArchive = "https://github.com/NixOS/nixpkgs/archive/nixos-23.05.tar.gz"
 
 [phases.setup]
   nixPkgs = [
@@ -16,4 +19,4 @@
   cmds = ["npm install --python=python3 --legacy-peer-deps"]
 
 [start]
-  cmd = "node src/index.js"
+  cmd = "node src/index.js"A
