@@ -1,31 +1,19 @@
-# nixpacks.toml - força ambiente compatível com Node 16 sem depender do engines
+# nixpacks.toml - força Node 16 + dependências para Vosk funcionar
 
 [phases.setup]
-  # Lista explícita de pacotes Nix (evita undefined variable)
   nixPkgs = [
-    "nodejs-16_x"          # Tenta puxar do cache se disponível
-    "python3"
-    "gcc"
-    "gnumake"
-    "unzip"
-    "yt-dlp"               # pro fallback se quiser depois
+    "nodejs-16_x",
+    "python3",
+    "python3Packages.pip",
+    "gcc",
+    "gnumake",
+    "unzip",
+    "yt-dlp"
   ]
-
-  # Apt packages se precisar (alguns bindings usam)
-  aptPkgs = ["python3-dev", "libopus-dev"]  # ajuda no build do opus/vosk se der pau
+  aptPkgs = ["python3-dev", "libopus-dev"]
 
 [phases.install]
-  # Usa python3 explícito pro node-gyp (opus e vosk precisam)
   cmds = ["npm install --python=python3 --legacy-peer-deps"]
 
-[phases.build]
-  # Se precisar de build extra (geralmente não)
-  cmds = []
-
 [start]
-  cmd = "node src/index.js"  # ou "npm start" se preferir
-
-# Variáveis pra ajudar no cache/compat
-[variables]
-  NIXPACKS_NODE_VERSION = "16"
-  NIXPACKS_PYTHON_VERSION = "3"
+  cmd = "node src/index.js"
