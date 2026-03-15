@@ -1,8 +1,9 @@
 [phases.setup]
-nixPkgs = ["nodejs-16_x", "python3", "python3Packages.pip", "gcc", "gnumake"]
-
+nixPkgs = ["nodejs-16_x", "python3", "python3Packages.pip", "gcc", "gnumake", "unzip"]
+ 
 [phases.install]
 cmds = ["npm install --python=python3"]
-
+ 
 [start]
 cmd = "node src/index.js"
+ 
