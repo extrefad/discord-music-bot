@@ -16,43 +16,65 @@ module.exports = {
   async execute(interaction, client) {
     await interaction.deferReply();
 
-    const query       = interaction.options.getString('musica');
-    const member      = interaction.member;
-    const voiceChannel = member.voice.channel;
+    let query       = interaction.options.getString('musica');
+    const member    = interaction.member;
+    const voiceChannel = member.voice?.channel;
 
+    // ─── Verifica se está em canal de voz ─────────────────────────────────────
     if (!voiceChannel) {
-      return interaction.editReply('❌ Você precisa estar em um canal de voz!');
+      return interaction.editReply('❌ Você precisa estar em um **canal de voz** primeiro!');
     }
 
-    const perms = voiceChannel.permissionsFor(interaction.client.user);
-    if (!perms.has('Connect') || !perms.has('Speak')) {
-      return interaction.editReply('❌ Não tenho permissão para entrar/falar nesse canal.');
+    // ─── Limpa URL do YouTube (remove playlist e parâmetros extras) ────────────
+    try {
+      const url = new URL(query);
+      if (url.hostname.includes('youtube.com') || url.hostname.includes('youtu.be')) {
+        const videoId = url.searchParams.get('v') || url.pathname.replace('/', '');
+        if (videoId) {
+          query = `https://www.youtube.com/watch?v=${videoId}`;
+        }
+      }
+    } catch {
+      // não é URL, é nome de música — tudo bem
     }
 
     await interaction.editReply(`🔍 Buscando: **${query}**...`);
 
-    const track = await searchTrack(query, member.displayName);
+    // ─── Busca a música ────────────────────────────────────────────────────────
+    const track = await searchTrack(query, member.displayName).catch(err => {
+      console.error('Erro na busca:', err);
+      return null;
+    });
+
     if (!track) {
-      return interaction.editReply(`❌ Nenhum resultado encontrado para: **${query}**`);
+      return interaction.editReply(`❌ Não encontrei nada para: **${query}**\n> Tente usar o nome da música em vez do link.`);
     }
 
+    // ─── Conecta ao canal de voz ───────────────────────────────────────────────
     const guildId = interaction.guildId;
     let queue = client.musicQueues.get(guildId);
 
     if (!queue) {
-      const connection = joinVoiceChannel({
-        channelId: voiceChannel.id,
-        guildId: voiceChannel.guild.id,
-        adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-        selfDeaf: false,
-        selfMute: false,
-      });
-
+      let connection;
       try {
-        await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
-      } catch {
-        connection.destroy();
-        return interaction.editReply('❌ Não consegui conectar ao canal de voz.');
+        connection = joinVoiceChannel({
+          channelId: voiceChannel.id,
+          guildId: voiceChannel.guild.id,
+          adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+          selfDeaf: false,
+          selfMute: false,
+        });
+
+        await entersState(connection, VoiceConnectionStatus.Ready, 15_000);
+
+      } catch (err) {
+        console.error('Erro ao conectar na voz:', err);
+        if (connection) connection.destroy();
+        return interaction.editReply(
+          '❌ Não consegui entrar no canal de voz.\n' +
+          '> • Verifique se o Voxara tem permissão de **Conectar** e **Falar** no canal\n' +
+          '> • Tente sair e entrar no canal de voz novamente'
+        );
       }
 
       queue = new MusicQueue(guildId, connection, interaction.channel);
@@ -61,23 +83,22 @@ module.exports = {
       startVoiceRecognition(connection, client, guildId, interaction.channel);
 
       interaction.channel.send(
-        '🎤 **Reconhecimento de voz ativo!**\n' +
-        'Fale **"música"** seguido do comando:\n' +
-        '> • *"música tocar [nome]"*\n' +
-        '> • *"música pausar"* / *"música continuar"*\n' +
-        '> • *"música pular"* / *"música parar tudo"*\n' +
-        '> • *"música embaralhar"* / *"música repetir"*'
+        '🎙️ **Voxara entrou no canal!**\n' +
+        '> Fale **"música"** + comando para controlar por voz:\n' +
+        '> *"música pausar"* • *"música pular"* • *"música tocar [nome]"*'
       );
     }
 
+    // ─── Adiciona à fila ───────────────────────────────────────────────────────
     await queue.addTrack(track);
 
     if (queue.current?.url !== track.url) {
       await interaction.editReply(
-        `✅ Adicionado à fila:\n> **${track.title}**\n> ⏱️ ${track.duration} | 📋 Posição: ${queue.tracks.length}`
+        `✅ **${track.title}** adicionada à fila!\n` +
+        `> ⏱️ ${track.duration} | 📋 Posição: ${queue.tracks.length}`
       );
     } else {
-      await interaction.editReply(`🎵 Tocando: **${track.title}**`);
+      await interaction.editReply(`🎵 Tocando agora: **${track.title}**`);
     }
   },
 };
