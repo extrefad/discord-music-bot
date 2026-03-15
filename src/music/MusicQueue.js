@@ -1,160 +1,289 @@
 const {
-  createAudioPlayer, createAudioResource, AudioPlayerStatus,
-  VoiceConnectionStatus, entersState, StreamType,
+  createAudioPlayer,
+  createAudioResource,
+  AudioPlayerStatus,
+  VoiceConnectionStatus,
+  entersState,
+  StreamType,
 } = require('@discordjs/voice');
 const https      = require('https');
+const fs         = require('fs');
+const path       = require('path');
 const { spawn }  = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
 
-const YT_API_KEY = process.env.YT_API_KEY;
+const YT_API_KEY  = process.env.YT_API_KEY;
+const COOKIE_PATH = path.join('/tmp', 'yt-cookies.txt');
 
+// Grava os cookies em disco uma vez ao iniciar
+if (process.env.YT_COOKIE && !fs.existsSync(COOKIE_PATH)) {
+  try {
+    fs.writeFileSync(COOKIE_PATH, process.env.YT_COOKIE);
+    console.log('🍪 Cookies do YouTube gravados em disco');
+  } catch (e) {
+    console.warn('Aviso: nao foi possivel gravar cookies:', e.message);
+  }
+}
+
+// ─── YouTube Data API — busca por texto ──────────────────────────────────────
 async function searchYouTubeAPI(query) {
-  if (!YT_API_KEY) throw new Error('YT_API_KEY nao configurada');
-  const data = await fetchJson(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=${encodeURIComponent(query)}&key=${YT_API_KEY}`);
+  if (!YT_API_KEY) throw new Error('YT_API_KEY nao configurada no Railway');
+  const data = await fetchJson(
+    `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=${encodeURIComponent(query)}&key=${YT_API_KEY}`
+  );
   const item = data?.items?.[0];
-  if (!item) throw new Error('Nenhum resultado encontrado');
+  if (!item) throw new Error('Nenhum resultado encontrado para: ' + query);
   return { videoId: item.id.videoId, title: item.snippet.title };
 }
 
+// ─── YouTube Data API — busca duração ────────────────────────────────────────
 async function getVideoDuration(videoId) {
   try {
-    const data = await fetchJson(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoId}&key=${YT_API_KEY}`);
+    const data = await fetchJson(
+      `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoId}&key=${YT_API_KEY}`
+    );
     return parseDuration(data?.items?.[0]?.contentDetails?.duration || 'PT0S');
   } catch { return '0:00'; }
 }
 
+// ─── Converte ISO 8601 → string ───────────────────────────────────────────────
 function parseDuration(iso) {
-  const h = (iso.match(/(\d+)H/) || [])[1] || 0;
-  const m = (iso.match(/(\d+)M/) || [])[1] || 0;
-  const s = (iso.match(/(\d+)S/) || [])[1] || 0;
+  const h = parseInt((iso.match(/(\d+)H/) || [])[1] || 0);
+  const m = parseInt((iso.match(/(\d+)M/) || [])[1] || 0);
+  const s = parseInt((iso.match(/(\d+)S/) || [])[1] || 0);
   if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
   return `${m}:${String(s).padStart(2,'0')}`;
 }
 
+// ─── yt-dlp → URL do stream → ffmpeg → PCM ───────────────────────────────────
 function getAudioStream(videoId) {
-  const ytdlp = spawn('yt-dlp', [
-    '--no-playlist', '--format', 'bestaudio', '--get-url', '--quiet',
-    `https://www.youtube.com/watch?v=${videoId}`,
-  ], { stdio: ['ignore', 'pipe', 'ignore'] });
+  const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  const args = [
+    '--no-playlist',
+    '--format', 'bestaudio/best',
+    '--get-url',
+    '--no-warnings',
+    '--extractor-retries', '3',
+  ];
+
+  // Usa cookies se disponíveis
+  if (fs.existsSync(COOKIE_PATH)) {
+    args.push('--cookies', COOKIE_PATH);
+  }
+
+  args.push(ytUrl);
+
+  const ytdlp = spawn('yt-dlp', args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
   return new Promise((resolve, reject) => {
     let audioUrl = '';
-    ytdlp.stdout.on('data', d => audioUrl += d.toString().trim());
+    let errorOut = '';
+    let settled  = false;
+
+    const done = (err, result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (err) reject(err);
+      else resolve(result);
+    };
+
+    // Timeout de 30s
+    const timer = setTimeout(() => {
+      ytdlp.kill('SIGKILL');
+      done(new Error('yt-dlp timeout (30s)'));
+    }, 30000);
+
+    ytdlp.stdout.on('data', d => audioUrl += d.toString());
+    ytdlp.stderr.on('data', d => errorOut += d.toString());
+
+    ytdlp.on('error', err => done(new Error('yt-dlp nao encontrado: ' + err.message)));
+
     ytdlp.on('close', (code) => {
-      if (!audioUrl || code !== 0) { reject(new Error('yt-dlp nao retornou URL')); return; }
-      console.log('Stream URL obtida via yt-dlp');
+      audioUrl = audioUrl.split('\n')[0].trim();
+
+      if (errorOut) console.warn('yt-dlp stderr:', errorOut.slice(0, 300));
+
+      if (!audioUrl || code !== 0) {
+        done(new Error(`yt-dlp falhou (code ${code}): ${errorOut.slice(0, 150)}`));
+        return;
+      }
+
+      console.log('✅ yt-dlp retornou URL do stream');
+
       const ffmpeg = spawn(ffmpegPath, [
-        '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
-        '-i', audioUrl, '-analyzeduration', '0', '-loglevel', '0',
-        '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1',
+        '-reconnect',          '1',
+        '-reconnect_streamed', '1',
+        '-reconnect_delay_max','5',
+        '-i',                  audioUrl,
+        '-analyzeduration',    '0',
+        '-loglevel',           '0',
+        '-f',                  's16le',
+        '-ar',                 '48000',
+        '-ac',                 '2',
+        'pipe:1',
       ], { stdio: ['ignore', 'pipe', 'ignore'] });
-      resolve(ffmpeg.stdout);
+
+      ffmpeg.on('error', err => console.error('ffmpeg erro:', err.message));
+      done(null, ffmpeg.stdout);
     });
-    ytdlp.on('error', reject);
   });
 }
 
+// ─── HTTP helper ──────────────────────────────────────────────────────────────
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location)
         return fetchJson(res.headers.location).then(resolve).catch(reject);
-      if (res.statusCode !== 200) return reject(new Error('HTTP ' + res.statusCode));
+      if (res.statusCode !== 200)
+        return reject(new Error(`HTTP ${res.statusCode} em ${url.slice(0, 60)}`));
       let data = '';
       res.on('data', c => data += c);
-      res.on('end', () => { try { resolve(JSON.parse(data)); } catch { reject(new Error('JSON invalido')); } });
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch { reject(new Error('Resposta nao e JSON valido')); }
+      });
     });
     req.on('error', reject);
-    req.setTimeout(10000, () => { req.destroy(); reject(new Error('Timeout')); });
+    req.setTimeout(10000, () => { req.destroy(); reject(new Error('HTTP timeout')); });
   });
 }
 
-function extractYoutubeId(url) {
+// ─── Extrai ID do YouTube de uma URL ─────────────────────────────────────────
+function extractYoutubeId(query) {
   try {
-    const u = new URL(url);
+    const u = new URL(query);
     if (u.hostname.includes('youtu.be')) return u.pathname.slice(1).split('?')[0];
     return u.searchParams.get('v');
   } catch { return null; }
 }
 
+// ─── Busca universal: nome / YouTube / Spotify ────────────────────────────────
 async function searchTrack(query, requestedBy) {
   try {
     let videoId, title, duration;
 
+    // YouTube URL
     if (query.includes('youtube.com') || query.includes('youtu.be')) {
       videoId = extractYoutubeId(query);
       if (videoId) {
-        const data = await fetchJson(`https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoId}&key=${YT_API_KEY}`);
+        const data = await fetchJson(
+          `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoId}&key=${YT_API_KEY}`
+        );
         const item = data?.items?.[0];
         title    = item?.snippet?.title || 'Sem titulo';
         duration = parseDuration(item?.contentDetails?.duration || 'PT0S');
       }
     }
 
+    // Spotify ou nome
     if (!videoId) {
       let q = query;
-      if (query.includes('spotify.com'))
-        q = decodeURIComponent(query.split('/track/')[1]?.split('?')[0] || query);
-      const r = await searchYouTubeAPI(q);
-      videoId  = r.videoId;
-      title    = r.title;
+      if (query.includes('spotify.com/track')) {
+        // Extrai o ID do Spotify e usa como query de busca
+        const spId = query.split('/track/')[1]?.split('?')[0];
+        q = spId || query;
+      }
+      const result = await searchYouTubeAPI(q);
+      videoId  = result.videoId;
+      title    = result.title;
       duration = await getVideoDuration(videoId);
     }
 
-    console.log('Encontrado: ' + title + ' [' + videoId + ']');
-    return { title, url: 'https://www.youtube.com/watch?v=' + videoId, videoId, duration, requestedBy };
+    console.log(`✅ Musica encontrada: "${title}" [${videoId}]`);
+    return {
+      title,
+      url: `https://www.youtube.com/watch?v=${videoId}`,
+      videoId,
+      duration,
+      requestedBy,
+    };
   } catch (err) {
     console.error('Erro em searchTrack:', err.message);
     return null;
   }
 }
 
+// ─── MusicQueue ───────────────────────────────────────────────────────────────
 class MusicQueue {
   constructor(guildId, voiceConnection, textChannel) {
-    this.guildId = guildId; this.connection = voiceConnection; this.textChannel = textChannel;
-    this.player = createAudioPlayer(); this.tracks = []; this.current = null;
-    this.volume = 0.5; this.loop = false; this.loopQueue = false;
+    this.guildId     = guildId;
+    this.connection  = voiceConnection;
+    this.textChannel = textChannel;
+    this.player      = createAudioPlayer();
+    this.tracks      = [];
+    this.current     = null;
+    this.volume      = 0.5;
+    this.loop        = false;
+    this.loopQueue   = false;
 
     this.connection.subscribe(this.player);
+
     this.player.on(AudioPlayerStatus.Idle, () => this._onTrackEnd());
+
     this.player.on('error', (err) => {
       console.error('Player erro:', err.message);
-      this.textChannel.send('Erro ao reproduzir **' + this.current?.title + '**. Pulando...');
+      this.textChannel.send(`❌ Erro ao reproduzir **${this.current?.title}**. Pulando...`);
       this._onTrackEnd();
     });
+
+    // Reconecta se cair
     this.connection.on(VoiceConnectionStatus.Disconnected, async () => {
       try {
         await Promise.race([
-          entersState(this.connection, VoiceConnectionStatus.Signalling, 5000),
-          entersState(this.connection, VoiceConnectionStatus.Connecting, 5000),
+          entersState(this.connection, VoiceConnectionStatus.Signalling, 5_000),
+          entersState(this.connection, VoiceConnectionStatus.Connecting, 5_000),
         ]);
-      } catch { this.destroy(); }
+      } catch {
+        this.textChannel.send('🔌 **Voxara foi desconectado.**\n> Use `/tocar` para chamar novamente!');
+        this.destroy();
+      }
     });
-    this.connection.on(VoiceConnectionStatus.Destroyed, () => this.destroy());
+
+    this.connection.on(VoiceConnectionStatus.Destroyed, () => {
+      this.destroy();
+    });
   }
 
   async addTrack(track) {
     this.tracks.push(track);
-    if (this.player.state.status === AudioPlayerStatus.Idle) await this.playNext();
+    if (this.player.state.status === AudioPlayerStatus.Idle) {
+      await this.playNext();
+    }
   }
 
   async playNext() {
     if (this.tracks.length === 0) {
       this.current = null;
-      this.textChannel.send('Fila finalizada! Use `/tocar` para adicionar mais musicas.');
+      this.textChannel.send('✅ Fila finalizada! Use `/tocar` para adicionar mais músicas.');
       return;
     }
+
     this.current = this.tracks.shift();
+
     try {
-      console.log('Iniciando stream: ' + this.current.title);
+      console.log(`🎵 Iniciando stream: "${this.current.title}"`);
+
       const audioStream = await getAudioStream(this.current.videoId);
-      const resource = createAudioResource(audioStream, { inputType: StreamType.Raw, inlineVolume: true });
+
+      const resource = createAudioResource(audioStream, {
+        inputType: StreamType.Raw,
+        inlineVolume: true,
+      });
+
       resource.volume?.setVolume(this.volume);
       this.player.play(resource);
-      this.textChannel.send('Tocando agora:\n> **' + this.current.title + '**\n> ' + this.current.requestedBy + ' | ' + this.current.duration);
+
+      this.textChannel.send(
+        `🎵 **Tocando agora:**\n` +
+        `> **${this.current.title}**\n` +
+        `> 👤 ${this.current.requestedBy} | ⏱️ ${this.current.duration}`
+      );
     } catch (err) {
       console.error('Erro ao iniciar stream:', err.message);
-      this.textChannel.send('Nao foi possivel reproduzir **' + this.current.title + '**. Pulando...');
+      this.textChannel.send(`❌ Não foi possível reproduzir **${this.current.title}**. Pulando...`);
       await this.playNext();
     }
   }
@@ -168,7 +297,13 @@ class MusicQueue {
   pause()  { return this.player.pause(); }
   resume() { return this.player.unpause(); }
   skip()   { this.player.stop(); }
-  stop()   { this.tracks = []; this.loop = false; this.loopQueue = false; this.player.stop(); }
+
+  stop() {
+    this.tracks    = [];
+    this.loop      = false;
+    this.loopQueue = false;
+    this.player.stop();
+  }
 
   setVolume(vol) {
     this.volume = Math.max(0, Math.min(1, vol / 100));
@@ -182,11 +317,21 @@ class MusicQueue {
     }
   }
 
-  toggleLoop()      { this.loop      = !this.loop;      if (this.loop)      this.loopQueue = false; return this.loop; }
-  toggleLoopQueue() { this.loopQueue = !this.loopQueue; if (this.loopQueue) this.loop      = false; return this.loopQueue; }
+  toggleLoop() {
+    this.loop = !this.loop;
+    if (this.loop) this.loopQueue = false;
+    return this.loop;
+  }
+
+  toggleLoopQueue() {
+    this.loopQueue = !this.loopQueue;
+    if (this.loopQueue) this.loop = false;
+    return this.loopQueue;
+  }
 
   destroy() {
-    this.tracks = []; this.current = null;
+    this.tracks  = [];
+    this.current = null;
     try { this.player.stop(true); } catch {}
     try { this.connection.destroy(); } catch {}
   }
