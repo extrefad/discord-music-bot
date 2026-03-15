@@ -1,8 +1,8 @@
 [phases.setup]
-nixPkgs = ["nodejs-16_x", "python3", "python3Packages.pip", "gcc", "gnumake", "unzip", "yt-dlp"]
+nixPkgs = ["nodejs_18", "ffmpeg"]
 
 [phases.install]
-cmds = ["npm install --python=python3"]
+cmds = ["npm cache clean --force", "npm install"]
 
 [start]
 cmd = "node src/index.js"
