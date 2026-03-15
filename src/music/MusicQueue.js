@@ -6,10 +6,8 @@ const {
   entersState,
   StreamType,
 } = require('@discordjs/voice');
-const playdl = require('play-dl');
-const ytDlpExec = require('yt-dlp-exec'); // tente instalar, se não der erro continua
 
-// Lista de instâncias Invidious ativas em março 2026 (teste e adicione mais se precisar)
+// Instâncias públicas Invidious que ainda respondem em março 2026 (baseado em listas atualizadas)
 const INVIDIOUS_INSTANCES = [
   'https://inv.nadeko.net',
   'https://yewtu.be',
@@ -17,6 +15,25 @@ const INVIDIOUS_INSTANCES = [
   'https://invidious.f5.si',
   'https://iv.melmac.space',
 ];
+
+async function getAudioUrl(videoId) {
+  for (const base of INVIDIOUS_INSTANCES) {
+    try {
+      const response = await fetch(`${base}/api/v1/videos/${videoId}?fields=formatStreams`);
+      if (!response.ok) continue;
+      const data = await response.json();
+      // Procura formato áudio (opus ou m4a preferencial)
+      const audioFormat = data.formatStreams?.find(f => f.type === 'audio' || f.audioQuality);
+      if (audioFormat?.url) {
+        console.log(`[SUCCESS] Áudio de ${base}`);
+        return audioFormat.url;
+      }
+    } catch (err) {
+      console.warn(`Instância ${base} falhou: ${err.message}`);
+    }
+  }
+  throw new Error('Nenhuma instância Invidious retornou stream de áudio');
+}
 
 class MusicQueue {
   constructor(guildId, voiceConnection, textChannel) {
@@ -34,9 +51,9 @@ class MusicQueue {
 
     this.player.on(AudioPlayerStatus.Idle, () => this._onTrackEnd());
 
-    this.player.on('error', (error) => {
-      console.error('Erro no player:', error.message);
-      this.textChannel.send(`❌ Erro ao reproduzir: ${this.current?.title || 'música desconhecida'}. Pulando...`);
+    this.player.on('error', (err) => {
+      console.error('Player error:', err);
+      this.textChannel.send(`❌ Erro ao tocar **${this.current?.title}**. Pulando...`);
       this._onTrackEnd();
     });
 
@@ -61,88 +78,38 @@ class MusicQueue {
     }
   }
 
-  // Função nova: tenta Invidious primeiro (mais estável em 2026 sem dependências extras)
-  async getStreamUrl(videoIdOrUrl) {
-    const videoId = playdl.yt_validate(videoIdOrUrl) === 'video' ? videoIdOrUrl.split('v=')[1] || videoIdOrUrl : null;
-    if (!videoId) return null;
-
-    for (const instance of INVIDIOUS_INSTANCES) {
-      try {
-        const response = await fetch(`${instance}/api/v1/videos/${videoId}?fields=formatStreams`);
-        if (!response.ok) continue;
-
-        const data = await response.json();
-        const audioStream = data.formatStreams?.find(f => f.type === 'audio' || f.audioQuality);
-        if (audioStream?.url) {
-          console.log(`Stream de Invidious (${instance}): ${audioStream.url}`);
-          return audioStream.url;
-        }
-      } catch (err) {
-        console.warn(`Instância ${instance} falhou: ${err.message}`);
-      }
-    }
-
-    // Fallback para yt-dlp-exec se instalado
-    if (ytDlpExec) {
-      try {
-        const result = await ytDlpExec(`https://youtube.com/watch?v=${videoId}`, {
-          dumpSingleJson: true,
-          format: 'bestaudio[ext=m4a]/bestaudio/best',
-          noCheckCertificates: true,
-        });
-        const format = result.formats?.find(f => f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none')) || result.formats[0];
-        if (format?.url) {
-          console.log('Stream de yt-dlp:', format.url);
-          return format.url;
-        }
-      } catch (err) {
-        console.error('yt-dlp falhou:', err.message);
-      }
-    }
-
-    // Último fallback: play-dl (pode falhar com YouTube 2026)
-    return null;
-  }
-
   async playNext() {
     if (this.tracks.length === 0) {
       this.current = null;
-      this.textChannel.send('✅ Fila finalizada! Use `/tocar` para adicionar mais músicas.');
+      this.textChannel.send('Fila terminou! Use /tocar pra adicionar mais.');
       return;
     }
 
     this.current = this.tracks.shift();
 
     try {
-      let streamInfo;
-
-      // Tenta Invidious ou yt-dlp primeiro
-      const directUrl = await this.getStreamUrl(this.current.url);
-      if (directUrl) {
-        streamInfo = { stream: directUrl, type: StreamType.Arbitrary };
-      } else {
-        // Fallback play-dl
-        streamInfo = await playdl.stream(this.current.url, {
-          quality: 2, // alta qualidade áudio
-          discordPlayerCompatibility: true,
-        });
+      // Extrai videoId da URL (suporta youtube.com e youtu.be)
+      const urlObj = new URL(this.current.url);
+      let videoId = urlObj.searchParams.get('v');
+      if (!videoId && urlObj.hostname === 'youtu.be') {
+        videoId = urlObj.pathname.slice(1);
       }
+      if (!videoId) throw new Error('Não encontrou videoId na URL');
 
-      const resource = createAudioResource(streamInfo.stream, {
-        inputType: streamInfo.type,
+      const audioUrl = await getAudioUrl(videoId);
+
+      const resource = createAudioResource(audioUrl, {
+        inputType: StreamType.Arbitrary,
         inlineVolume: true,
       });
 
       resource.volume?.setVolume(this.volume);
       this.player.play(resource);
 
-      this.textChannel.send(
-        `🎵 **Tocando agora:** ${this.current.title}\n` +
-        `> 👤 ${this.current.requestedBy} | ⏱️ ${this.current.duration}`
-      );
-    } catch (error) {
-      console.error('Erro ao iniciar stream:', error);
-      this.textChannel.send(`❌ Não foi possível reproduzir **${this.current.title}**. Pulando...`);
+      this.textChannel.send(`🎵 Tocando: **${this.current.title}** (${this.current.duration})\nAdicionado por ${this.current.requestedBy}`);
+    } catch (err) {
+      console.error('Falha no stream:', err.message);
+      this.textChannel.send(`❌ Falhou ao tocar **${this.current.title}** (todas instâncias caíram?). Pulando...`);
       await this.playNext();
     }
   }
@@ -156,7 +123,6 @@ class MusicQueue {
   pause() { this.player.pause(); }
   resume() { this.player.unpause(); }
   skip() { this.player.stop(); }
-
   stop() {
     this.tracks = [];
     this.loop = false;
@@ -165,10 +131,8 @@ class MusicQueue {
   }
 
   setVolume(vol) {
-    this.volume = Math.max(0, Math.min(1, vol / 100));
-    if (this.player.state.resource?.volume) {
-      this.player.state.resource.volume.setVolume(this.volume);
-    }
+    this.volume = Math.max(0, Math.min(2, vol / 100)); // cap em 200% pra não distorcer
+    if (this.player.state.resource?.volume) this.player.state.resource.volume.setVolume(this.volume);
   }
 
   shuffle() {
@@ -198,39 +162,42 @@ class MusicQueue {
   }
 
   isPlaying() { return this.player.state.status === AudioPlayerStatus.Playing; }
-  isPaused() { return this.player.state.status === AudioPlayerStatus.Paused; }
+  isPaused()  { return this.player.state.status === AudioPlayerStatus.Paused; }
 }
 
-// Função de busca (mantida, mas com fallback)
 async function searchTrack(query, requestedBy) {
   try {
-    let info;
-    if (playdl.yt_validate(query) === 'video') {
-      const results = await playdl.video_info(query);
-      info = results.video_details;
-    } else {
-      const results = await playdl.search(query, { limit: 1, source: { youtube: 'video' } });
-      if (!results.length) return null;
-      info = results[0];
+    // Se for link direto, extrai videoId
+    if (query.includes('youtube.com') || query.includes('youtu.be')) {
+      const url = new URL(query);
+      let videoId = url.searchParams.get('v');
+      if (!videoId && url.hostname === 'youtu.be') videoId = url.pathname.slice(1);
+      if (videoId) {
+        return {
+          title: 'Vídeo do YouTube',
+          url: `https://youtube.com/watch?v=${videoId}`,
+          duration: '??:??',
+          requestedBy,
+        };
+      }
     }
+
+    // Busca via Invidious (primeira instância)
+    const res = await fetch(`https://inv.nadeko.net/api/v1/search?q=${encodeURIComponent(query)}&type=video`);
+    const results = await res.json();
+    if (!results?.length) return null;
+
+    const vid = results[0];
     return {
-      title: info.title || 'Título desconhecido',
-      url: info.url,
-      duration: formatDuration(info.durationInSec || 0),
+      title: vid.title,
+      url: `https://youtube.com/watch?v=${vid.videoId}`,
+      duration: vid.duration || '??:??',
       requestedBy,
     };
   } catch (err) {
-    console.error('Erro na busca:', err);
+    console.error('Busca falhou:', err);
     return null;
   }
-}
-
-function formatDuration(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
 module.exports = { MusicQueue, searchTrack };
