@@ -1,28 +1,8 @@
-# nixpacks.toml - força uso de nixpkgs antigo com Node 16 (nixos-23.05)
-
-[nixpacks]
-nixpkgsArchive = "https://github.com/NixOS/nixpkgs/archive/refs/tags/23.05.tar.gz"
-
 [phases.setup]
-  nixPkgs = [
-    "nodejs-16_x",
-    "python3",
-    "python3Packages.pip",
-    "gcc",
-    "gnumake",
-    "unzip",
-    "yt-dlp"
-  ]
-  aptPkgs = [
-    "python3-dev",
-    "libopus-dev",
-    "pkg-config"
-  ]
+nixPkgs = ["nodejs-16_x", "python3", "python3Packages.pip", "gcc", "gnumake", "unzip", "yt-dlp"]
 
 [phases.install]
-  cmds = [
-    "npm install --python=python3 --legacy-peer-deps"
-  ]
+cmds = ["npm install --python=python3"]
 
 [start]
-  cmd = "node src/index.js"
+cmd = "node src/index.js"

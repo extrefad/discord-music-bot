@@ -6,66 +6,184 @@ const {
   entersState,
   StreamType,
 } = require('@discordjs/voice');
+const https = require('https');
+const http  = require('http');
 
-// Instâncias públicas Invidious que ainda respondem em março 2026 (baseado em listas atualizadas)
+// Instâncias públicas do Invidious — se uma falhar, tenta a próxima
 const INVIDIOUS_INSTANCES = [
   'https://inv.nadeko.net',
-  'https://yewtu.be',
   'https://invidious.nerdvpn.de',
-  'https://invidious.f5.si',
+  'https://invidious.privacyredirect.com',
   'https://iv.melmac.space',
+  'https://invidious.io.lol',
 ];
 
-async function getAudioUrl(videoId) {
-  for (const base of INVIDIOUS_INSTANCES) {
+// ─── Busca info do vídeo via Invidious ────────────────────────────────────────
+async function getVideoInfo(videoId) {
+  for (const instance of INVIDIOUS_INSTANCES) {
     try {
-      const response = await fetch(`${base}/api/v1/videos/${videoId}?fields=formatStreams`);
-      if (!response.ok) continue;
-      const data = await response.json();
-      // Procura formato áudio (opus ou m4a preferencial)
-      const audioFormat = data.formatStreams?.find(f => f.type === 'audio' || f.audioQuality);
-      if (audioFormat?.url) {
-        console.log(`[SUCCESS] Áudio de ${base}`);
-        return audioFormat.url;
-      }
-    } catch (err) {
-      console.warn(`Instância ${base} falhou: ${err.message}`);
-    }
+      const data = await fetchJson(`${instance}/api/v1/videos/${videoId}?fields=title,lengthSeconds,adaptiveFormats,formatStreams`);
+      if (data && data.title) return { data, instance };
+    } catch {}
   }
-  throw new Error('Nenhuma instância Invidious retornou stream de áudio');
+  throw new Error('Todas as instâncias Invidious falharam');
 }
 
+// ─── Pega URL do stream de áudio ──────────────────────────────────────────────
+async function getAudioUrl(videoId) {
+  const { data } = await getVideoInfo(videoId);
+
+  // Tenta pegar opus/webm (melhor qualidade)
+  const formats = data.adaptiveFormats || [];
+  const audioFormats = formats
+    .filter(f => f.type?.includes('audio'))
+    .sort((a, b) => (parseInt(b.bitrate) || 0) - (parseInt(a.bitrate) || 0));
+
+  if (audioFormats.length > 0) {
+    return audioFormats[0].url;
+  }
+
+  // Fallback: formatStreams (menor qualidade mas mais compatível)
+  const fallback = data.formatStreams?.[0];
+  if (fallback) return fallback.url;
+
+  throw new Error('Nenhum formato de áudio encontrado');
+}
+
+// ─── Busca vídeos no YouTube via Invidious ────────────────────────────────────
+async function searchInvidious(query) {
+  for (const instance of INVIDIOUS_INSTANCES) {
+    try {
+      const results = await fetchJson(
+        `${instance}/api/v1/search?q=${encodeURIComponent(query)}&type=video&fields=videoId,title,lengthSeconds`
+      );
+      if (results?.length > 0) return { result: results[0], instance };
+    } catch {}
+  }
+  throw new Error('Busca falhou em todas as instâncias');
+}
+
+// ─── Helper fetch JSON ────────────────────────────────────────────────────────
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith('https') ? https : http;
+    const req = client.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return fetchJson(res.headers.location).then(resolve).catch(reject);
+      }
+      if (res.statusCode !== 200) {
+        return reject(new Error(`HTTP ${res.statusCode}`));
+      }
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch { reject(new Error('JSON inválido')); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(8000, () => { req.destroy(); reject(new Error('Timeout')); });
+  });
+}
+
+// ─── Extrai ID do YouTube de uma URL ─────────────────────────────────────────
+function extractYoutubeId(url) {
+  try {
+    const u = new URL(url);
+    return u.searchParams.get('v') || u.pathname.replace('/', '');
+  } catch {
+    return null;
+  }
+}
+
+// ─── Formata duração ──────────────────────────────────────────────────────────
+function formatDuration(s) {
+  s = parseInt(s) || 0;
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  return `${m}:${String(sec).padStart(2,'0')}`;
+}
+
+// ─── Busca universal ──────────────────────────────────────────────────────────
+async function searchTrack(query, requestedBy) {
+  try {
+    // Spotify → extrai nome do artista + música do título da página
+    if (query.includes('spotify.com/track')) {
+      console.log('🟢 Spotify detectado, buscando no YouTube...');
+      // Remove o link e busca pelo texto da URL
+      const spotifyId = query.split('/track/')[1]?.split('?')[0];
+      // Tenta buscar via nome da URL (fallback simples)
+      const searchQuery = query; // vai buscar pelo link como texto
+      const { result } = await searchInvidious(spotifyId || query);
+      return {
+        title:       result.title,
+        url:         `https://www.youtube.com/watch?v=${result.videoId}`,
+        videoId:     result.videoId,
+        duration:    formatDuration(result.lengthSeconds),
+        requestedBy,
+      };
+    }
+
+    // YouTube URL → extrai ID
+    if (query.includes('youtube.com') || query.includes('youtu.be')) {
+      const videoId = extractYoutubeId(query);
+      if (videoId) {
+        const { data } = await getVideoInfo(videoId);
+        return {
+          title:    data.title,
+          url:      `https://www.youtube.com/watch?v=${videoId}`,
+          videoId,
+          duration: formatDuration(data.lengthSeconds),
+          requestedBy,
+        };
+      }
+    }
+
+    // Nome → busca no Invidious
+    console.log(`🔍 Buscando: "${query}"`);
+    const { result } = await searchInvidious(query);
+    return {
+      title:    result.title,
+      url:      `https://www.youtube.com/watch?v=${result.videoId}`,
+      videoId:  result.videoId,
+      duration: formatDuration(result.lengthSeconds),
+      requestedBy,
+    };
+  } catch (err) {
+    console.error('Erro em searchTrack:', err.message);
+    return null;
+  }
+}
+
+// ─── MusicQueue ───────────────────────────────────────────────────────────────
 class MusicQueue {
   constructor(guildId, voiceConnection, textChannel) {
-    this.guildId = guildId;
-    this.connection = voiceConnection;
+    this.guildId     = guildId;
+    this.connection  = voiceConnection;
     this.textChannel = textChannel;
-    this.player = createAudioPlayer();
-    this.tracks = [];
-    this.current = null;
-    this.volume = 0.5;
-    this.loop = false;
-    this.loopQueue = false;
+    this.player      = createAudioPlayer();
+    this.tracks      = [];
+    this.current     = null;
+    this.volume      = 0.5;
+    this.loop        = false;
+    this.loopQueue   = false;
 
     this.connection.subscribe(this.player);
 
     this.player.on(AudioPlayerStatus.Idle, () => this._onTrackEnd());
-
     this.player.on('error', (err) => {
-      console.error('Player error:', err);
-      this.textChannel.send(`❌ Erro ao tocar **${this.current?.title}**. Pulando...`);
+      console.error('Player erro:', err.message);
+      this.textChannel.send(`❌ Erro ao reproduzir **${this.current?.title}**. Pulando...`);
       this._onTrackEnd();
     });
 
     this.connection.on(VoiceConnectionStatus.Disconnected, async () => {
       try {
         await Promise.race([
-          entersState(this.connection, VoiceConnectionStatus.Signalling, 5000),
-          entersState(this.connection, VoiceConnectionStatus.Connecting, 5000),
+          entersState(this.connection, VoiceConnectionStatus.Signalling, 5_000),
+          entersState(this.connection, VoiceConnectionStatus.Connecting, 5_000),
         ]);
-      } catch {
-        this.destroy();
-      }
+      } catch { this.destroy(); }
     });
 
     this.connection.on(VoiceConnectionStatus.Destroyed, () => this.destroy());
@@ -81,22 +199,16 @@ class MusicQueue {
   async playNext() {
     if (this.tracks.length === 0) {
       this.current = null;
-      this.textChannel.send('Fila terminou! Use /tocar pra adicionar mais.');
+      this.textChannel.send('✅ Fila finalizada! Use `/tocar` para adicionar mais músicas.');
       return;
     }
 
     this.current = this.tracks.shift();
 
     try {
-      // Extrai videoId da URL (suporta youtube.com e youtu.be)
-      const urlObj = new URL(this.current.url);
-      let videoId = urlObj.searchParams.get('v');
-      if (!videoId && urlObj.hostname === 'youtu.be') {
-        videoId = urlObj.pathname.slice(1);
-      }
-      if (!videoId) throw new Error('Não encontrou videoId na URL');
-
-      const audioUrl = await getAudioUrl(videoId);
+      console.log(`🎵 Obtendo stream para: ${this.current.title}`);
+      const audioUrl = await getAudioUrl(this.current.videoId);
+      console.log(`✅ Stream obtido!`);
 
       const resource = createAudioResource(audioUrl, {
         inputType: StreamType.Arbitrary,
@@ -106,33 +218,32 @@ class MusicQueue {
       resource.volume?.setVolume(this.volume);
       this.player.play(resource);
 
-      this.textChannel.send(`🎵 Tocando: **${this.current.title}** (${this.current.duration})\nAdicionado por ${this.current.requestedBy}`);
+      this.textChannel.send(
+        `🎵 **Tocando agora:**\n` +
+        `> **${this.current.title}**\n` +
+        `> 👤 ${this.current.requestedBy} | ⏱️ ${this.current.duration}`
+      );
     } catch (err) {
-      console.error('Falha no stream:', err.message);
-      this.textChannel.send(`❌ Falhou ao tocar **${this.current.title}** (todas instâncias caíram?). Pulando...`);
+      console.error('Erro ao iniciar stream:', err.message);
+      this.textChannel.send(`❌ Não foi possível reproduzir **${this.current.title}**. Pulando...`);
       await this.playNext();
     }
   }
 
   _onTrackEnd() {
-    if (this.loop && this.current) this.tracks.unshift(this.current);
+    if (this.loop && this.current)           this.tracks.unshift(this.current);
     else if (this.loopQueue && this.current) this.tracks.push(this.current);
     this.playNext();
   }
 
-  pause() { this.player.pause(); }
-  resume() { this.player.unpause(); }
-  skip() { this.player.stop(); }
-  stop() {
-    this.tracks = [];
-    this.loop = false;
-    this.loopQueue = false;
-    this.player.stop();
-  }
+  pause()  { return this.player.pause(); }
+  resume() { return this.player.unpause(); }
+  skip()   { this.player.stop(); }
+  stop()   { this.tracks = []; this.loop = false; this.loopQueue = false; this.player.stop(); }
 
   setVolume(vol) {
-    this.volume = Math.max(0, Math.min(2, vol / 100)); // cap em 200% pra não distorcer
-    if (this.player.state.resource?.volume) this.player.state.resource.volume.setVolume(this.volume);
+    this.volume = Math.max(0, Math.min(1, vol / 100));
+    this.player.state.resource?.volume?.setVolume(this.volume);
   }
 
   shuffle() {
@@ -142,62 +253,17 @@ class MusicQueue {
     }
   }
 
-  toggleLoop() {
-    this.loop = !this.loop;
-    if (this.loop) this.loopQueue = false;
-    return this.loop;
-  }
-
-  toggleLoopQueue() {
-    this.loopQueue = !this.loopQueue;
-    if (this.loopQueue) this.loop = false;
-    return this.loopQueue;
-  }
+  toggleLoop()      { this.loop      = !this.loop;      if (this.loop)      this.loopQueue = false; return this.loop; }
+  toggleLoopQueue() { this.loopQueue = !this.loopQueue; if (this.loopQueue) this.loop      = false; return this.loopQueue; }
 
   destroy() {
-    this.tracks = [];
-    this.current = null;
+    this.tracks = []; this.current = null;
     try { this.player.stop(true); } catch {}
     try { this.connection.destroy(); } catch {}
   }
 
   isPlaying() { return this.player.state.status === AudioPlayerStatus.Playing; }
   isPaused()  { return this.player.state.status === AudioPlayerStatus.Paused; }
-}
-
-async function searchTrack(query, requestedBy) {
-  try {
-    // Se for link direto, extrai videoId
-    if (query.includes('youtube.com') || query.includes('youtu.be')) {
-      const url = new URL(query);
-      let videoId = url.searchParams.get('v');
-      if (!videoId && url.hostname === 'youtu.be') videoId = url.pathname.slice(1);
-      if (videoId) {
-        return {
-          title: 'Vídeo do YouTube',
-          url: `https://youtube.com/watch?v=${videoId}`,
-          duration: '??:??',
-          requestedBy,
-        };
-      }
-    }
-
-    // Busca via Invidious (primeira instância)
-    const res = await fetch(`https://inv.nadeko.net/api/v1/search?q=${encodeURIComponent(query)}&type=video`);
-    const results = await res.json();
-    if (!results?.length) return null;
-
-    const vid = results[0];
-    return {
-      title: vid.title,
-      url: `https://youtube.com/watch?v=${vid.videoId}`,
-      duration: vid.duration || '??:??',
-      requestedBy,
-    };
-  } catch (err) {
-    console.error('Busca falhou:', err);
-    return null;
-  }
 }
 
 module.exports = { MusicQueue, searchTrack };
