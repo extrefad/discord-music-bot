@@ -1,5 +1,9 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { joinVoiceChannel, VoiceConnectionStatus, entersState } = require('@discordjs/voice');
+const {
+  joinVoiceChannel,
+  VoiceConnectionStatus,
+  entersState,
+} = require('@discordjs/voice');
 const { MusicQueue, searchTrack } = require('../music/MusicQueue');
 const { startVoiceRecognition } = require('../voice/VoiceRecognition');
 
@@ -16,66 +20,62 @@ module.exports = {
   async execute(interaction, client) {
     await interaction.deferReply();
 
-    let query       = interaction.options.getString('musica');
-    const member    = interaction.member;
+    let query          = interaction.options.getString('musica');
+    const member       = interaction.member;
     const voiceChannel = member.voice?.channel;
 
-    // ─── Verifica se está em canal de voz ─────────────────────────────────────
     if (!voiceChannel) {
       return interaction.editReply('❌ Você precisa estar em um **canal de voz** primeiro!');
     }
 
-    // ─── Limpa URL do YouTube (remove playlist e parâmetros extras) ────────────
+    // Limpa URL do YouTube (remove playlist e parâmetros extras)
     try {
       const url = new URL(query);
       if (url.hostname.includes('youtube.com') || url.hostname.includes('youtu.be')) {
         const videoId = url.searchParams.get('v') || url.pathname.replace('/', '');
-        if (videoId) {
-          query = `https://www.youtube.com/watch?v=${videoId}`;
-        }
+        if (videoId) query = `https://www.youtube.com/watch?v=${videoId}`;
       }
-    } catch {
-      // não é URL, é nome de música — tudo bem
-    }
+    } catch { /* não é URL */ }
 
     await interaction.editReply(`🔍 Buscando: **${query}**...`);
 
-    // ─── Busca a música ────────────────────────────────────────────────────────
-    const track = await searchTrack(query, member.displayName).catch(err => {
-      console.error('Erro na busca:', err);
-      return null;
-    });
-
+    const track = await searchTrack(query, member.displayName).catch(() => null);
     if (!track) {
-      return interaction.editReply(`❌ Não encontrei nada para: **${query}**\n> Tente usar o nome da música em vez do link.`);
+      return interaction.editReply(`❌ Não encontrei nada para: **${query}**`);
     }
 
-    // ─── Conecta ao canal de voz ───────────────────────────────────────────────
     const guildId = interaction.guildId;
     let queue = client.musicQueues.get(guildId);
 
     if (!queue) {
-      let connection;
-      try {
-        connection = joinVoiceChannel({
-          channelId: voiceChannel.id,
-          guildId: voiceChannel.guild.id,
-          adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-          selfDeaf: false,
-          selfMute: false,
-        });
+      const connection = joinVoiceChannel({
+        channelId:      voiceChannel.id,
+        guildId:        voiceChannel.guild.id,
+        adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+        selfDeaf:       false,
+        selfMute:       false,
+      });
 
-        await entersState(connection, VoiceConnectionStatus.Ready, 15_000);
+      // Reconecta se cair
+      connection.on(VoiceConnectionStatus.Disconnected, async () => {
+        try {
+          await Promise.race([
+            entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
+            entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
+          ]);
+        } catch {
+          connection.destroy();
+          client.musicQueues.delete(guildId);
+        }
+      });
 
-      } catch (err) {
-        console.error('Erro ao conectar na voz:', err);
-        if (connection) connection.destroy();
-        return interaction.editReply(
-          '❌ Não consegui entrar no canal de voz.\n' +
-          '> • Verifique se o Voxara tem permissão de **Conectar** e **Falar** no canal\n' +
-          '> • Tente sair e entrar no canal de voz novamente'
-        );
-      }
+      connection.on(VoiceConnectionStatus.Destroyed, () => {
+        client.musicQueues.delete(guildId);
+      });
+
+      connection.on('error', err => {
+        console.error('Erro na conexão de voz:', err.message);
+      });
 
       queue = new MusicQueue(guildId, connection, interaction.channel);
       client.musicQueues.set(guildId, queue);
@@ -89,7 +89,6 @@ module.exports = {
       );
     }
 
-    // ─── Adiciona à fila ───────────────────────────────────────────────────────
     await queue.addTrack(track);
 
     if (queue.current?.url !== track.url) {
