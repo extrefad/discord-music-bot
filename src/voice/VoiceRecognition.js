@@ -1,4 +1,4 @@
 function startVoiceRecognition() {
-  console.log('Reconhecimento de voz desativado nesta versao.');
+  console.log('Reconhecimento de voz sera adicionado em breve.');
 }
 module.exports = { startVoiceRecognition };
