@@ -11,9 +11,8 @@ const ffmpegPath = require('ffmpeg-static');
 const YT_API_KEY  = process.env.YT_API_KEY;
 const COOKIE_PATH = path.join('/tmp', 'yt-cookies.txt');
 
-// ─── Busca via YouTube Data API ───────────────────────────────────────────────
 async function searchYouTubeAPI(query) {
-  if (!YT_API_KEY) throw new Error('YT_API_KEY nao configurada no Railway');
+  if (!YT_API_KEY) throw new Error('YT_API_KEY nao configurada');
   const data = await fetchJson(
     'https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=' +
     encodeURIComponent(query) + '&key=' + YT_API_KEY
@@ -41,65 +40,73 @@ function parseDuration(iso) {
   return m + ':' + String(s).padStart(2,'0');
 }
 
-// ─── Stream via yt-dlp com cliente Android (bypassa bot detection) ─────────
+// Tenta múltiplos clientes até um funcionar
 function getAudioStream(videoId) {
-  // Regrava cookie em disco a cada chamada
   if (process.env.YT_COOKIE) {
     try { fs.writeFileSync(COOKIE_PATH, process.env.YT_COOKIE); } catch {}
   }
 
-  const args = [
-    '--no-playlist',
-    '--format', 'bestaudio/best',
-    '--get-url',
-    '--no-warnings',
-    '--extractor-retries', '3',
-    '--extractor-args', 'youtube:player_client=android',
-  ];
+  const clients = ['tv_embedded', 'ios', 'android', 'mweb'];
 
-  if (fs.existsSync(COOKIE_PATH)) args.push('--cookies', COOKIE_PATH);
-  args.push('https://www.youtube.com/watch?v=' + videoId);
+  function tryClient(index) {
+    if (index >= clients.length) {
+      return Promise.reject(new Error('Todos os clientes yt-dlp falharam para ' + videoId));
+    }
 
-  const ytdlp = spawn('yt-dlp', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const client = clients[index];
+    const args = [
+      '--no-playlist',
+      '--format', 'bestaudio/best',
+      '--get-url',
+      '--no-warnings',
+      '--extractor-retries', '1',
+      '--extractor-args', 'youtube:player_client=' + client,
+    ];
 
-  return new Promise((resolve, reject) => {
-    let audioUrl = '', errorOut = '', settled = false;
+    if (fs.existsSync(COOKIE_PATH)) args.push('--cookies', COOKIE_PATH);
+    args.push('https://www.youtube.com/watch?v=' + videoId);
 
-    const done = (err, val) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (err) reject(err); else resolve(val);
-    };
+    return new Promise((resolve, reject) => {
+      const ytdlp = spawn('yt-dlp', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let audioUrl = '', errorOut = '', settled = false;
 
-    const timer = setTimeout(() => {
-      ytdlp.kill('SIGKILL');
-      done(new Error('yt-dlp timeout 30s'));
-    }, 30000);
+      const done = (err, val) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (err) reject(err); else resolve(val);
+      };
 
-    ytdlp.stdout.on('data', d => audioUrl += d.toString());
-    ytdlp.stderr.on('data', d => errorOut += d.toString());
-    ytdlp.on('error', err => done(new Error('yt-dlp spawn erro: ' + err.message)));
-    ytdlp.on('close', (code) => {
-      audioUrl = audioUrl.split('\n')[0].trim();
-      if (errorOut) console.warn('yt-dlp stderr:', errorOut.slice(0, 300));
-      if (!audioUrl || code !== 0) {
-        done(new Error('yt-dlp falhou code=' + code + ': ' + errorOut.slice(0, 150)));
-        return;
-      }
-      console.log('Stream URL obtida via yt-dlp!');
-      const ffmpeg = spawn(ffmpegPath, [
-        '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
-        '-i', audioUrl, '-analyzeduration', '0', '-loglevel', '0',
-        '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1',
-      ], { stdio: ['ignore', 'pipe', 'ignore'] });
-      ffmpeg.on('error', e => console.error('ffmpeg erro:', e.message));
-      done(null, ffmpeg.stdout);
-    });
-  });
+      const timer = setTimeout(() => {
+        ytdlp.kill('SIGKILL');
+        done(new Error('timeout'));
+      }, 20000);
+
+      ytdlp.stdout.on('data', d => audioUrl += d.toString());
+      ytdlp.stderr.on('data', d => errorOut += d.toString());
+      ytdlp.on('error', err => done(new Error(err.message)));
+      ytdlp.on('close', (code) => {
+        audioUrl = audioUrl.split('\n')[0].trim();
+        if (!audioUrl || code !== 0) {
+          console.warn('Cliente ' + client + ' falhou, tentando proximo...');
+          done(new Error('falhou'));
+        } else {
+          console.log('Stream obtida com cliente: ' + client);
+          const ffmpeg = spawn(ffmpegPath, [
+            '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
+            '-i', audioUrl, '-analyzeduration', '0', '-loglevel', '0',
+            '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1',
+          ], { stdio: ['ignore', 'pipe', 'ignore'] });
+          ffmpeg.on('error', e => console.error('ffmpeg erro:', e.message));
+          done(null, ffmpeg.stdout);
+        }
+      });
+    }).catch(() => tryClient(index + 1));
+  }
+
+  return tryClient(0);
 }
 
-// ─── HTTP helper ──────────────────────────────────────────────────────────────
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
@@ -115,7 +122,6 @@ function fetchJson(url) {
   });
 }
 
-// ─── Extrai ID do YouTube ─────────────────────────────────────────────────────
 function extractYoutubeId(query) {
   try {
     const u = new URL(query);
@@ -124,11 +130,9 @@ function extractYoutubeId(query) {
   } catch { return null; }
 }
 
-// ─── Busca universal ──────────────────────────────────────────────────────────
 async function searchTrack(query, requestedBy) {
   try {
     let videoId, title, duration;
-
     if (query.includes('youtube.com') || query.includes('youtu.be')) {
       videoId = extractYoutubeId(query);
       if (videoId) {
@@ -141,7 +145,6 @@ async function searchTrack(query, requestedBy) {
         duration = parseDuration(item?.contentDetails?.duration || 'PT0S');
       }
     }
-
     if (!videoId) {
       let q = query;
       if (query.includes('spotify.com/track'))
@@ -150,7 +153,6 @@ async function searchTrack(query, requestedBy) {
       videoId = r.videoId; title = r.title;
       duration = await getVideoDuration(videoId);
     }
-
     console.log('Encontrado: ' + title + ' [' + videoId + ']');
     return { title, url: 'https://www.youtube.com/watch?v=' + videoId, videoId, duration, requestedBy };
   } catch (err) {
@@ -159,28 +161,18 @@ async function searchTrack(query, requestedBy) {
   }
 }
 
-// ─── MusicQueue ───────────────────────────────────────────────────────────────
 class MusicQueue {
   constructor(guildId, voiceConnection, textChannel) {
-    this.guildId     = guildId;
-    this.connection  = voiceConnection;
-    this.textChannel = textChannel;
-    this.player      = createAudioPlayer();
-    this.tracks      = [];
-    this.current     = null;
-    this.volume      = 0.5;
-    this.loop        = false;
-    this.loopQueue   = false;
-
+    this.guildId = guildId; this.connection = voiceConnection; this.textChannel = textChannel;
+    this.player = createAudioPlayer(); this.tracks = []; this.current = null;
+    this.volume = 0.5; this.loop = false; this.loopQueue = false;
     this.connection.subscribe(this.player);
-
     this.player.on(AudioPlayerStatus.Idle, () => this._onTrackEnd());
     this.player.on('error', (err) => {
       console.error('Player erro:', err.message);
       this.textChannel.send('Erro ao reproduzir **' + (this.current?.title || '?') + '**. Pulando...');
       this._onTrackEnd();
     });
-
     this.connection.on(VoiceConnectionStatus.Disconnected, async () => {
       try {
         await Promise.race([
@@ -192,7 +184,6 @@ class MusicQueue {
         this.destroy();
       }
     });
-
     this.connection.on(VoiceConnectionStatus.Destroyed, () => this.destroy());
   }
 
@@ -204,19 +195,14 @@ class MusicQueue {
   async playNext() {
     if (this.tracks.length === 0) {
       this.current = null;
-      this.textChannel.send('✅ Fila finalizada! Use `/tocar` para adicionar mais musicas.');
+      this.textChannel.send('✅ Fila finalizada! Use `/tocar` para mais musicas.');
       return;
     }
-
     this.current = this.tracks.shift();
-
     try {
       console.log('Iniciando stream: ' + this.current.title);
       const audioStream = await getAudioStream(this.current.videoId);
-      const resource = createAudioResource(audioStream, {
-        inputType: StreamType.Raw,
-        inlineVolume: true,
-      });
+      const resource = createAudioResource(audioStream, { inputType: StreamType.Raw, inlineVolume: true });
       resource.volume?.setVolume(this.volume);
       this.player.play(resource);
       this.textChannel.send(
