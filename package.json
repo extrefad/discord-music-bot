@@ -1,5 +1,5 @@
 {
-  "name": "Voice command bot",
+  "name": "discord-music-bot",
   "version": "1.0.0",
   "main": "src/index.js",
   "type": "commonjs",
@@ -11,10 +11,13 @@
   "engines": {
     "node": "16.x"
   },
+  "overrides": {
+    "undici": "5.28.4"
+  },
   "dependencies": {
     "@discordjs/opus": "^0.9.0",
     "@discordjs/voice": "^0.16.1",
-    "discord.js": "^14.14.1",
+    "discord.js": "14.14.1",
     "dotenv": "^16.4.5",
     "ffmpeg-static": "^5.2.0",
     "play-dl": "^1.9.7",
