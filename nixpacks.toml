@@ -1,22 +1,22 @@
-# nixpacks.toml - pin nixpkgs antigo com Node 16 disponível (nixos-23.05)
+# nixpacks.toml - força Nixpkgs antigo com Node 16 disponível (nixos-23.05)
 
 [nixpacks]
 nixpkgsArchive = "https://github.com/NixOS/nixpkgs/archive/nixos-23.05.tar.gz"
 
 [phases.setup]
-  nixPkgs = [
-    "nodejs-16_x",
-    "python3",
-    "python3Packages.pip",
-    "gcc",
-    "gnumake",
-    "unzip",
-    "yt-dlp"
-  ]
-  aptPkgs = ["python3-dev", "libopus-dev"]
+nixPkgs = [
+  "nodejs-16_x",
+  "python3",
+  "python3Packages.pip",
+  "gcc",
+  "gnumake",
+  "unzip",
+  "yt-dlp"
+]
+aptPkgs = ["python3-dev", "libopus-dev"]
 
 [phases.install]
-  cmds = ["npm install --python=python3 --legacy-peer-deps"]
+cmds = ["npm install --python=python3 --legacy-peer-deps"]
 
 [start]
-  cmd = "node src/index.js"A
+cmd = "node src/index.js"
