@@ -1,8 +1,9 @@
 [phases.setup]
-nixPkgs = ["nodejs_22", "ffmpeg", "python3", "gcc", "gnumake"]
-
+nixPkgs = ["nodejs-22_x", "ffmpeg", "python3", "gcc", "gnumake"]
+ 
 [phases.install]
 cmds = ["npm install"]
-
+ 
 [start]
 cmd = "node src/index.js"
+ 
