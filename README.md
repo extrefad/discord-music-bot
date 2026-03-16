@@ -1,57 +1,111 @@
-# Discord Music Bot (100% offline para Windows)
+# Voxara Bot (Jockie-like) 🎵
 
-Este bot foi reestruturado para tocar **apenas arquivos locais**, sem YouTube/Spotify e sem streaming externo.
+Bot de música para Discord inspirado no comportamento do Jockie Music, executando **100% no seu PC** (sem Railway/host externo).
 
-## O que mudou
+## Recursos
 
-- Removido DisTube e integração online.
-- Player próprio baseado em `@discordjs/voice`.
-- Biblioteca local em `src/music`.
-- Comandos focados em uso offline no Windows.
+- Slash commands completas (`/play`, `/skip`, `/queue`, etc.)
+- Sistema de fila por servidor (multi guild)
+- Reprodução YouTube + Spotify links + busca por texto
+- Logs estruturados (`[INFO]`, `[WARN]`, `[ERROR]`, `[MUSIC]`)
+- Cooldown anti-spam por comando
+- Reconexão/saída automática em canal vazio
+- Arquitetura modular por camadas
 
-## Requisitos (Windows)
+## Stack
 
-- Node.js 18+
-- FFmpeg disponível no sistema (ou use `ffmpeg-static`, já instalado como dependência)
+- Node.js 22+
+- discord.js v14
+- distube v5
+- @distube/youtube
+- @distube/spotify
+- dotenv
+- ffmpeg-static
+- opusscript
+- libsodium-wrappers
+- prism-media
+
+## Estrutura
+
+```txt
+src/
+├ core/
+│  ├ BotClient.js
+│  ├ Config.js
+│  └ Logger.js
+├ events/
+│  ├ error.js
+│  ├ interactionCreate.js
+│  ├ ready.js
+│  └ voiceStateUpdate.js
+├ commands/
+│  ├ music/
+│  │  ├ play.js
+│  │  ├ pause.js
+│  │  ├ resume.js
+│  │  ├ skip.js
+│  │  ├ stop.js
+│  │  ├ queue.js
+│  │  ├ nowplaying.js
+│  │  ├ volume.js
+│  │  ├ loop.js
+│  │  ├ shuffle.js
+│  │  └ disconnect.js
+│  └ utility/
+│     ├ help.js
+│     └ ping.js
+├ player/
+│  ├ PlayerManager.js
+│  ├ QueueManager.js
+│  ├ SearchManager.js
+│  └ Track.js
+├ utils/
+│  ├ CooldownManager.js
+│  ├ EmbedBuilder.js
+│  └ PermissionManager.js
+└ index.js
+```
+
+## Configuração
+
+Crie `.env` na raiz:
+
+```env
+DISCORD_TOKEN=
+CLIENT_ID=
+GUILD_ID=
+PREFIX=/
+LEAVE_ON_EMPTY_COOLDOWN_MS=120000
+```
+
+> `GUILD_ID` é opcional, mas recomendado no desenvolvimento para propagação instantânea dos comandos.
 
 ## Instalação
 
 ```bash
 npm install
-```
-
-## Configuração
-
-Crie um `.env` na raiz:
-
-```env
-DISCORD_TOKEN=seu_token
-CLIENT_ID=seu_client_id
-GUILD_ID=seu_guild_id_opcional
-```
-
-## Biblioteca local
-
-Coloque arquivos de áudio em:
-
-```text
-src/music
-```
-
-Formatos aceitos: `.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`.
-
-## Executar
-
-```bash
 npm start
 ```
 
 ## Comandos
 
-- `/biblioteca` → lista músicas locais
-- `/tocar musica:<nome>` → toca por nome (ou parte do nome)
-- `/fila`, `/tocando`, `/pausar`, `/pular`, `/parar`
-- `/volume nivel:<0-100>`
-- `/loop modo:<track|queue|off>`
-- `/embaralhar`
+- `/play query:<nome/link>`
+- `/pause`
+- `/resume`
+- `/skip`
+- `/stop`
+- `/queue`
+- `/nowplaying`
+- `/volume value:<1-150>`
+- `/loop mode:<off|song|queue>`
+- `/shuffle`
+- `/disconnect`
+- `/help`
+- `/ping`
 
+## Observações de produção local (PC como servidor)
+
+- Deixe o processo rodando com PM2/NSSM/Task Scheduler.
+- Use Node 22 LTS.
+- Mantenha `ffmpeg-static` e dependências nativas atualizadas.
+- Para 100+ servidores, monitore RAM/CPU e habilite restart policy.
