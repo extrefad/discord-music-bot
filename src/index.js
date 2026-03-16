@@ -24,17 +24,11 @@ client.commands = new Collection();
 // ───────────────────────────────
 
 client.distube = new DisTube(client, {
-
-  plugins: [
-    new YtDlpPlugin()
-  ],
-
+  plugins: [new YtDlpPlugin()],
   emitNewSongOnly: true,
   leaveOnEmpty: true,
   leaveOnFinish: true,
-  leaveOnStop: true,
-  joinNewVoiceChannel: true
-
+  leaveOnStop: true
 });
 
 
@@ -51,7 +45,7 @@ client.distube
   queue.textChannel.send(
     `🎵 **Tocando agora:**\n` +
     `> **${song.name}**\n` +
-    `> 👤 ${song.user?.displayName || 'Alguém'} | ⏱️ ${song.formattedDuration}`
+    `> 👤 ${song.user?.displayName || 'Usuário'} | ⏱️ ${song.formattedDuration}`
   );
 
 })
@@ -96,7 +90,6 @@ client.distube
 // ───────────────────────────────
 
 const commandsPath = path.join(__dirname, 'commands');
-
 let commandsJson = [];
 
 if (fs.existsSync(commandsPath)) {
@@ -133,7 +126,7 @@ if (fs.existsSync(commandsPath)) {
 const activities = [
 
   { name: '/tocar para começar', type: ActivityType.Playing },
-  { name: 'Ouvindo o servidor', type: ActivityType.Listening },
+  { name: 'Música em servidores', type: ActivityType.Listening },
   { name: 'Voxara Music Bot', type: ActivityType.Watching }
 
 ];
@@ -143,7 +136,6 @@ function rotateActivity() {
   if (!client.user) return;
 
   const act = activities[Math.floor(Math.random() * activities.length)];
-
   client.user.setActivity(act.name, { type: act.type });
 
 }
@@ -153,7 +145,7 @@ function rotateActivity() {
 // READY
 // ───────────────────────────────
 
-client.once('clientReady', async () => {
+client.once('ready', async () => {
 
   console.log('\n══════════════════════════════');
   console.log('VOXARA BOT ONLINE');
@@ -194,7 +186,6 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
-
   if (!command) return;
 
   try {
@@ -219,7 +210,5 @@ client.on('interactionCreate', async interaction => {
 
 });
 
-
-// ───────────────────────────────
 
 client.login(process.env.DISCORD_TOKEN);
