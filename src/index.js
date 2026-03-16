@@ -25,10 +25,7 @@ client.commands = new Collection();
 
 client.distube = new DisTube(client, {
   plugins: [new YtDlpPlugin()],
-  emitNewSongOnly: true,
-  leaveOnEmpty: true,
-  leaveOnFinish: true,
-  leaveOnStop: true
+  emitNewSongOnly: true
 });
 
 
