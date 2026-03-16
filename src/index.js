@@ -24,9 +24,17 @@ client.commands = new Collection();
 // ───────────────────────────────
 
 client.distube = new DisTube(client, {
+
   plugins: [
     new YtDlpPlugin()
-  ]
+  ],
+
+  emitNewSongOnly: true,
+  leaveOnEmpty: true,
+  leaveOnFinish: true,
+  leaveOnStop: true,
+  joinNewVoiceChannel: true
+
 });
 
 
@@ -38,7 +46,7 @@ client.distube
 
 .on('playSong', (queue, song) => {
 
-  if(!queue.textChannel) return;
+  if (!queue.textChannel) return;
 
   queue.textChannel.send(
     `🎵 **Tocando agora:**\n` +
@@ -50,7 +58,7 @@ client.distube
 
 .on('addSong', (queue, song) => {
 
-  if(!queue.textChannel) return;
+  if (!queue.textChannel) return;
 
   queue.textChannel.send(
     `✅ **${song.name}** adicionada à fila!\n` +
@@ -61,15 +69,15 @@ client.distube
 
 .on('finish', queue => {
 
-  if(queue.textChannel)
-  queue.textChannel.send('✅ Fila finalizada! Use `/tocar` para adicionar mais músicas.');
+  if (queue.textChannel)
+    queue.textChannel.send('✅ Fila finalizada!');
 
 })
 
 .on('disconnect', queue => {
 
-  if(queue.textChannel)
-  queue.textChannel.send('🔌 Voxara foi desconectado.');
+  if (queue.textChannel)
+    queue.textChannel.send('🔌 Voxara desconectado.');
 
 })
 
@@ -77,8 +85,8 @@ client.distube
 
   console.error('DisTube erro:', error);
 
-  if(channel)
-  channel.send('❌ Erro ao reproduzir. Tente novamente.');
+  if (channel)
+    channel.send('❌ Erro ao reproduzir música.');
 
 });
 
@@ -89,16 +97,15 @@ client.distube
 
 const commandsPath = path.join(__dirname, 'commands');
 
-if(fs.existsSync(commandsPath)){
+let commandsJson = [];
+
+if (fs.existsSync(commandsPath)) {
 
   const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-
-  var commandsJson = [];
 
   for (const file of commandFiles) {
 
     const mod = require(path.join(commandsPath, file));
-
     const list = Array.isArray(mod) ? mod : [mod];
 
     for (const cmd of list) {
@@ -106,13 +113,13 @@ if(fs.existsSync(commandsPath)){
       if (!cmd.data || !cmd.execute) continue;
 
       client.commands.set(cmd.data.name, cmd);
-
       commandsJson.push(cmd.data.toJSON());
 
     }
+
   }
 
-}else{
+} else {
 
   console.log("⚠ Pasta commands não encontrada");
 
@@ -131,12 +138,13 @@ const activities = [
 
 ];
 
-function rotateActivity(){
+function rotateActivity() {
+
+  if (!client.user) return;
 
   const act = activities[Math.floor(Math.random() * activities.length)];
 
-  if(client.user)
-  client.user.setActivity(act.name,{ type: act.type });
+  client.user.setActivity(act.name, { type: act.type });
 
 }
 
@@ -153,7 +161,7 @@ client.once('clientReady', async () => {
   console.log('Servidores:', client.guilds.cache.size);
   console.log('══════════════════════════════\n');
 
-  try{
+  try {
 
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
@@ -165,14 +173,13 @@ client.once('clientReady', async () => {
 
     console.log(`✅ ${commandsJson.length} comandos registrados`);
 
-  }catch(err){
+  } catch (err) {
 
     console.error('Erro registrar comandos:', err);
 
   }
 
   rotateActivity();
-
   setInterval(rotateActivity, 30000);
 
 });
@@ -184,17 +191,17 @@ client.once('clientReady', async () => {
 
 client.on('interactionCreate', async interaction => {
 
-  if(!interaction.isChatInputCommand()) return;
+  if (!interaction.isChatInputCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
 
-  if(!command) return;
+  if (!command) return;
 
-  try{
+  try {
 
     await command.execute(interaction, client);
 
-  }catch(error){
+  } catch (error) {
 
     console.error(`Erro no comando /${interaction.commandName}`, error);
 
@@ -203,7 +210,7 @@ client.on('interactionCreate', async interaction => {
       ephemeral: true
     };
 
-    if(interaction.replied || interaction.deferred)
+    if (interaction.replied || interaction.deferred)
       await interaction.followUp(msg);
     else
       await interaction.reply(msg);
