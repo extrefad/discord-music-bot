@@ -34,9 +34,6 @@ class BotClient extends Client {
 
     this.distube = new DisTube(this, {
       emitNewSongOnly: true,
-      leaveOnStop: true,
-      leaveOnEmpty: false,
-      leaveOnFinish: false,
       ffmpeg: {
         path: ffmpegPath,
       },

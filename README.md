@@ -127,3 +127,7 @@ npm start
   - Esse erro era causado por uma opção inválida no plugin do Spotify em versões atuais.
   - Já foi corrigido no código desta versão (uso de `new SpotifyPlugin()` sem essa chave).
 
+- **Erro `DisTubeError [INVALID_KEY]: leaveOnStop`**
+  - A versão atual do DisTube não aceita mais algumas chaves antigas (`leaveOnStop`, `leaveOnEmpty`, `leaveOnFinish`) em `DisTubeOptions`.
+  - Já foi corrigido no código desta versão removendo essas chaves.
+
