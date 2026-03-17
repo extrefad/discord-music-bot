@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 module.exports = {
@@ -6,7 +6,7 @@ module.exports = {
   async execute(interaction, client) {
     const ok = client.player.shuffle(interaction.guildId);
     if (!ok) {
-      await interaction.reply({ embeds: [EmbedFactory.warning('Fila pequena', 'Adicione mais músicas para embaralhar.')], ephemeral: true });
+      await interaction.reply({ embeds: [EmbedFactory.warning('Fila pequena', 'Adicione mais músicas para embaralhar.')], flags: MessageFlags.Ephemeral });
       return;
     }
 

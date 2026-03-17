@@ -1,3 +1,4 @@
+const { MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../utils/EmbedBuilder');
 
 module.exports = {
@@ -23,7 +24,7 @@ module.exports = {
             `Aguarde **${(cooldown.retryAfterMs / 1000).toFixed(1)}s** para usar /${command.data.name} novamente.`,
           ),
         ],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -33,8 +34,8 @@ module.exports = {
     } catch (error) {
       client.logger.error(`Erro no comando /${command.data.name}`, { error: error.message });
       const payload = { embeds: [EmbedFactory.error('Erro', 'Ocorreu um erro ao executar o comando.')] };
-      if (interaction.deferred || interaction.replied) await interaction.followUp({ ...payload, ephemeral: true });
-      else await interaction.reply({ ...payload, ephemeral: true });
+      if (interaction.deferred || interaction.replied) await interaction.followUp({ ...payload, flags: MessageFlags.Ephemeral });
+      else await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
     }
   },
 };

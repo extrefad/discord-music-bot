@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 module.exports = {
@@ -6,7 +6,7 @@ module.exports = {
   async execute(interaction, client) {
     const ok = client.player.disconnect(interaction.guildId);
     if (!ok) {
-      await interaction.reply({ embeds: [EmbedFactory.warning('Sem conexão', 'O bot não está conectado a um canal.')], ephemeral: true });
+      await interaction.reply({ embeds: [EmbedFactory.warning('Sem conexão', 'O bot não está conectado a um canal.')], flags: MessageFlags.Ephemeral });
       return;
     }
 

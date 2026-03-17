@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 const modeLabels = {
@@ -26,7 +26,7 @@ module.exports = {
     const mode = interaction.options.getString('mode', true);
     const value = client.player.setLoop(interaction.guildId, mode);
     if (value === null) {
-      await interaction.reply({ embeds: [EmbedFactory.warning('Fila vazia', 'Inicie uma música antes de alterar loop.')], ephemeral: true });
+      await interaction.reply({ embeds: [EmbedFactory.warning('Fila vazia', 'Inicie uma música antes de alterar loop.')], flags: MessageFlags.Ephemeral });
       return;
     }
 

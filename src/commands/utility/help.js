@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 module.exports = {
@@ -11,7 +11,7 @@ module.exports = {
 
     await interaction.reply({
       embeds: [EmbedFactory.base('📚 Help - Voxara Music', commandList)],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   },
 };

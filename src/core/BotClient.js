@@ -65,7 +65,7 @@ class BotClient extends Client {
     return entries.flatMap((entry) => {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) return this.getJavaScriptFiles(fullPath);
-      if (entry.isFile() && entry.name.endsWith('.js')) return [fullPath];
+      if (entry.isFile() && entry.name.endsWith('.js') && !entry.name.startsWith('_')) return [fullPath];
       return [];
     });
   }
@@ -122,8 +122,13 @@ class BotClient extends Client {
       .on('addList', (queue, playlist) => {
         this.logger.music('Playlist adicionada', { guildId: queue.id, playlist: playlist.name, tracks: playlist.songs.length });
       })
-      .on('error', (channel, error) => {
-        this.logger.error('Erro no DisTube', { channel: channel?.id, error: error.message });
+      .on('error', (...args) => {
+        const foundError = args.find((arg) => arg instanceof Error);
+        const context = args.find((arg) => arg && typeof arg === 'object' && 'id' in arg);
+        this.logger.error('Erro no DisTube', {
+          error: foundError?.message || 'Erro desconhecido',
+          contextId: context?.id || null,
+        });
       })
       .on('finish', (queue) => {
         this.logger.music('Fila finalizada', { guildId: queue.id });

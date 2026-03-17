@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 module.exports = {
@@ -6,7 +6,7 @@ module.exports = {
   async execute(interaction, client) {
     const ok = client.player.stop(interaction.guildId);
     if (!ok) {
-      await interaction.reply({ embeds: [EmbedFactory.warning('Fila vazia', 'Não há fila ativa para parar.')], ephemeral: true });
+      await interaction.reply({ embeds: [EmbedFactory.warning('Fila vazia', 'Não há fila ativa para parar.')], flags: MessageFlags.Ephemeral });
       return;
     }
     await interaction.reply({ embeds: [EmbedFactory.success('⏹️ Player parado', 'Fila limpa com sucesso.')] });

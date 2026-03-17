@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 module.exports = {
@@ -11,7 +11,7 @@ module.exports = {
     const value = interaction.options.getInteger('value', true);
     const ok = client.player.setVolume(interaction.guildId, value);
     if (!ok) {
-      await interaction.reply({ embeds: [EmbedFactory.warning('Fila vazia', 'Inicie uma música antes de ajustar volume.')], ephemeral: true });
+      await interaction.reply({ embeds: [EmbedFactory.warning('Fila vazia', 'Inicie uma música antes de ajustar volume.')], flags: MessageFlags.Ephemeral });
       return;
     }
 

@@ -1,5 +1,5 @@
 module.exports = {
-  name: 'ready',
+  name: 'clientReady',
   once: true,
   async execute(client) {
     client.logger.info(`Bot iniciado como ${client.user.tag}`);

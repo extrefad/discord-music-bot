@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 module.exports = {
@@ -9,7 +9,7 @@ module.exports = {
       embeds: [
         EmbedFactory.success('🏓 Pong', `Gateway: **${client.ws.ping}ms**\nResposta: **${latency}ms**`),
       ],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   },
 };

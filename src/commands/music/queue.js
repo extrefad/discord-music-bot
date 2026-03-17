@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 module.exports = {
@@ -6,7 +6,7 @@ module.exports = {
   async execute(interaction, client) {
     const queue = client.player.getQueue(interaction.guildId);
     if (!queue || !queue.songs.length) {
-      await interaction.reply({ embeds: [EmbedFactory.warning('Fila vazia', 'Nenhuma música na fila.')], ephemeral: true });
+      await interaction.reply({ embeds: [EmbedFactory.warning('Fila vazia', 'Nenhuma música na fila.')], flags: MessageFlags.Ephemeral });
       return;
     }
 

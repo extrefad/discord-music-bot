@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 module.exports = {
@@ -6,7 +6,7 @@ module.exports = {
   async execute(interaction, client) {
     const song = client.player.getNowPlaying(interaction.guildId);
     if (!song) {
-      await interaction.reply({ embeds: [EmbedFactory.warning('Nada tocando', 'Não há música em reprodução.')], ephemeral: true });
+      await interaction.reply({ embeds: [EmbedFactory.warning('Nada tocando', 'Não há música em reprodução.')], flags: MessageFlags.Ephemeral });
       return;
     }
 
