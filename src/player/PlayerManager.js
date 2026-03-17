@@ -1,6 +1,7 @@
 const { RepeatMode } = require('distube');
 const { QueueManager } = require('./QueueManager');
 const { SearchManager } = require('./SearchManager');
+const { FallbackVoicePlayer } = require('./FallbackVoicePlayer');
 
 class PlayerManager {
   constructor({ distube, logger, config }) {
@@ -8,6 +9,7 @@ class PlayerManager {
     this.logger = logger;
     this.config = config;
     this.queues = new QueueManager(distube);
+    this.fallback = new FallbackVoicePlayer({ logger });
   }
 
   async play({ voiceChannel, textChannel, member, query }) {
@@ -50,7 +52,7 @@ class PlayerManager {
           });
         }
 
-        return this.queues.getSummary(voiceChannel.guild.id);
+        return { ...this.queues.getSummary(voiceChannel.guild.id), mode: 'distube' };
       } catch (error) {
         lastError = error;
         this.logger.warn('Tentativa de reprodução falhou', {
@@ -61,67 +63,101 @@ class PlayerManager {
       }
     }
 
-    throw lastError || new Error('Falha ao reproduzir música.');
+    this.logger.warn('Ativando modo contingência com play-dl', {
+      guildId: voiceChannel.guild.id,
+      query: normalized,
+      reason: lastError?.message || 'erro desconhecido',
+    });
+
+    const track = await this.fallback.play({
+      guildId: voiceChannel.guild.id,
+      voiceChannel,
+      query: normalized,
+      requestedBy: member.user,
+    });
+
+    return {
+      mode: 'fallback',
+      songs: [{
+        name: track.title,
+        url: track.url,
+        formattedDuration: track.durationRaw,
+      }],
+    };
   }
 
   pause(guildId) {
     const queue = this.distube.getQueue(guildId);
-    if (!queue) return false;
-    queue.pause();
-    return true;
+    if (queue) {
+      queue.pause();
+      return true;
+    }
+    return this.fallback.pause(guildId);
   }
 
   resume(guildId) {
     const queue = this.distube.getQueue(guildId);
-    if (!queue) return false;
-    queue.resume();
-    return true;
+    if (queue) {
+      queue.resume();
+      return true;
+    }
+    return this.fallback.resume(guildId);
   }
 
   skip(guildId) {
     const queue = this.distube.getQueue(guildId);
-    if (!queue) return false;
-    queue.skip();
-    return true;
+    if (queue) {
+      queue.skip();
+      return true;
+    }
+    return this.fallback.stop(guildId);
   }
 
   stop(guildId) {
-    return this.queues.clear(guildId);
+    const stoppedDisTube = this.queues.clear(guildId);
+    const stoppedFallback = this.fallback.stop(guildId);
+    return stoppedDisTube || stoppedFallback;
   }
 
   disconnect(guildId) {
     const queue = this.distube.getQueue(guildId);
-    if (!queue) return false;
-    queue.voice?.leave();
-    queue.stop();
-    return true;
+    if (queue) {
+      queue.voice?.leave();
+      queue.stop();
+      return true;
+    }
+    return this.fallback.stop(guildId);
   }
 
   setVolume(guildId, volume) {
     const queue = this.distube.getQueue(guildId);
-    if (!queue) return false;
-    queue.setVolume(volume);
-    return true;
+    if (queue) {
+      queue.setVolume(volume);
+      return true;
+    }
+    return this.fallback.setVolume(guildId, volume);
   }
 
   setLoop(guildId, mode) {
     const queue = this.distube.getQueue(guildId);
-    if (!queue) return null;
+    if (!queue) return this.fallback.has(guildId) ? 0 : null;
     const repeatMode = mode === 'desativado' ? RepeatMode.DISABLED : mode === 'musica' ? RepeatMode.SONG : RepeatMode.QUEUE;
     return queue.setRepeatMode(repeatMode);
   }
 
   shuffle(guildId) {
+    const queue = this.distube.getQueue(guildId);
+    if (!queue) return false;
     return this.queues.shuffle(guildId);
   }
 
   getQueue(guildId) {
-    return this.queues.getSummary(guildId);
+    return this.queues.getSummary(guildId) || this.fallback.getQueueSummary(guildId);
   }
 
   getNowPlaying(guildId) {
     const queue = this.distube.getQueue(guildId);
-    return queue?.songs?.[0] || null;
+    return queue?.songs?.[0] || this.fallback.getNowPlaying(guildId) || null;
   }
 }
 

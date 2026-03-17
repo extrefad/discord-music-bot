@@ -20,6 +20,8 @@
     "libsodium-wrappers": "^0.7.13",
     "opusscript": "^0.0.8",
     "prism-media": "^1.3.5",
-    "@distube/youtube": "^1.0.4"
+    "@distube/youtube": "^1.0.4",
+    "@discordjs/voice": "^0.19.1",
+    "play-dl": "^1.9.7"
   }
 }

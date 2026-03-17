@@ -16,15 +16,19 @@ module.exports = {
     const query = interaction.options.getString('busca', true);
 
     try {
-      await client.player.play({
+      const result = await client.player.play({
         voiceChannel,
         textChannel: interaction.channel,
         member: interaction.member,
         query,
       });
 
+      const detalhe = result?.mode === 'fallback'
+        ? '\n⚠️ Reprodução em modo de contingência (play-dl).'
+        : '';
+
       await interaction.editReply({
-        embeds: [EmbedFactory.success('✅ Adicionado à fila', `Busca: **${query}**`)],
+        embeds: [EmbedFactory.success('✅ Adicionado à fila', `Busca: **${query}**${detalhe}`)],
       });
     } catch (error) {
       client.logger.error('Falha no /tocar', { error: error?.message || 'Erro desconhecido' });

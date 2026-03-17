@@ -24,6 +24,8 @@ Bot de música para Discord inspirado no comportamento do Jockie Music, executan
 - opusscript
 - libsodium-wrappers
 - prism-media
+- @discordjs/voice
+- play-dl (modo contingência de reprodução)
 
 ## Estrutura
 
@@ -111,6 +113,12 @@ npm start
 - `/sair`
 - `/ajuda`
 - `/ping`
+
+## Modo contingência (play-dl)
+
+- Se o DisTube não conseguir extrair formatos do YouTube, o bot ativa fallback automático com `play-dl`.
+- Nessa situação, o `/tocar` informa que está em contingência.
+- Para reduzir erro de conexão em voz, garanta permissões **Conectar** e **Falar** no canal.
 
 ## Observações de produção local (PC como servidor)
 
