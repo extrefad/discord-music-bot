@@ -23,8 +23,6 @@ Bot de música para Discord inspirado no comportamento do Jockie Music, executan
 - opusscript
 - libsodium-wrappers
 - prism-media
-- @discordjs/voice
-- play-dl (modo contingência de reprodução)
 
 ## Estrutura
 

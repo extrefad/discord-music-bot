@@ -16,6 +16,20 @@ class FallbackVoicePlayer {
     this.guildStates = new Map();
   }
 
+  sanitizeQuery(rawQuery) {
+    let query = String(rawQuery || '').trim();
+
+    if (query.startsWith('<') && query.endsWith('>')) {
+      query = query.slice(1, -1).trim();
+    }
+
+    if (/^(www\.)?youtube\.com\//i.test(query) || /^youtu\.be\//i.test(query)) {
+      query = `https://${query.replace(/^https?:\/\//i, '')}`;
+    }
+
+    return query;
+  }
+
   getOrCreateState(guildId) {
     if (!this.guildStates.has(guildId)) {
       this.guildStates.set(guildId, {
@@ -32,29 +46,45 @@ class FallbackVoicePlayer {
     return this.guildStates.get(guildId);
   }
 
-  async resolveTrack(query, requestedBy) {
-    if (play.yt_validate(query) === 'video') {
-      const info = await play.video_info(query);
-      return {
-        url: info.video_details.url,
-        name: info.video_details.title,
-        formattedDuration: info.video_details.durationRaw || 'Ao vivo',
-        thumbnail: info.video_details.thumbnails?.[0]?.url,
-        user: requestedBy,
-      };
+  normalizeResolvedTrack(track, requestedBy) {
+    const url = track?.url || (track?.id ? `https://www.youtube.com/watch?v=${track.id}` : null);
+
+    if (!url) {
+      throw new Error('Falha ao resolver URL da música.');
     }
 
-    const results = await play.search(query, { limit: 1, source: { youtube: 'video' } });
+    return {
+      url,
+      name: track?.title || 'Desconhecido',
+      formattedDuration: track?.durationRaw || 'Ao vivo',
+      thumbnail: track?.thumbnails?.[0]?.url,
+      user: requestedBy,
+    };
+  }
+
+  async resolveTrack(query, requestedBy) {
+    const cleanedQuery = this.sanitizeQuery(query);
+
+    if (!cleanedQuery) throw new Error('Busca vazia.');
+
+    if (play.yt_validate(cleanedQuery) === 'video') {
+      try {
+        const info = await play.video_basic_info(cleanedQuery);
+        const details = info?.video_details;
+        return this.normalizeResolvedTrack(details, requestedBy);
+      } catch (error) {
+        this.logger.warn('Falha em video_basic_info, tentando busca fallback', {
+          query: cleanedQuery,
+          error: error?.message || 'Erro desconhecido',
+        });
+      }
+    }
+
+    const results = await play.search(cleanedQuery, { limit: 1, source: { youtube: 'video' } });
     const first = results?.[0];
     if (!first) throw new Error('Nenhum resultado encontrado no play-dl.');
 
-    return {
-      url: first.url,
-      name: first.title,
-      formattedDuration: first.durationRaw || 'Ao vivo',
-      thumbnail: first.thumbnails?.[0]?.url,
-      user: requestedBy,
-    };
+    return this.normalizeResolvedTrack(first, requestedBy);
   }
 
   async ensureConnection(guildId, voiceChannel) {
