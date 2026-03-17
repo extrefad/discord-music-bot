@@ -26,7 +26,7 @@ class FallbackVoicePlayer {
 
     query = this.extractUrlFromText(query);
 
-    if (/^(www\.)?youtube\.com\//i.test(query) || /^youtu\.be\//i.test(query)) {
+    if (/^(www\.)?youtube\.com\//i.test(query) || /^youtu\.be\//i.test(query) || /^(open\.)?spotify\.com\//i.test(query) || /^soundcloud\.com\//i.test(query)) {
       query = `https://${query.replace(/^https?:\/\//i, '')}`;
     }
 
@@ -62,6 +62,11 @@ class FallbackVoicePlayer {
 
   isLikelyYoutubeId(input) {
     return /^[a-zA-Z0-9_-]{11}$/.test(input);
+  }
+
+  extractYoutubeId(input) {
+    const match = String(input || '').match(/(?:v=|youtu\.be\/|shorts\/)([a-zA-Z0-9_-]{11})/i);
+    return match?.[1] || null;
   }
 
   getOrCreateState(guildId) {
@@ -159,15 +164,24 @@ class FallbackVoicePlayer {
     const cleaned = this.sanitizeQuery(query);
     if (!cleaned) throw new Error('Busca vazia.');
 
-    if (this.isLikelyYoutubeId(cleaned)) {
-      const track = await this.resolveFromYouTubeUrl(`https://www.youtube.com/watch?v=${cleaned}`, requestedBy);
+    const youtubeId = this.isLikelyYoutubeId(cleaned) ? cleaned : this.extractYoutubeId(cleaned);
+    if (youtubeId) {
+      const track = await this.resolveFromYouTubeUrl(`https://www.youtube.com/watch?v=${youtubeId}`, requestedBy);
       return { tracks: [track], sourceMessage: 'Reproduzindo via YouTube' };
     }
 
     const normalizedUrl = this.normalizePlayableUrl(cleaned);
 
     if (normalizedUrl) {
-      const validation = await play.validate(normalizedUrl);
+      let validation = null;
+      try {
+        validation = await play.validate(normalizedUrl);
+      } catch (error) {
+        this.logger.warn('Falha ao validar URL, tentando como busca', {
+          url: normalizedUrl,
+          error: error.message,
+        });
+      }
 
       if (validation?.startsWith('yt_')) {
         if (validation === 'yt_playlist') {

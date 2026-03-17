@@ -19,6 +19,8 @@ class PlayerManager {
       nowPlaying: result.nowPlaying,
       position: result.position,
       track: result.track,
+      sourceMessage: result.sourceMessage,
+      addedCount: result.addedCount,
       songs: this.fallback.getQueueSummary(voiceChannel.guild.id)?.songs || [result.track],
     };
   }
