@@ -14,6 +14,7 @@ const { SpotifyPlugin } = require('@distube/spotify');
 const ffmpegPath = require('ffmpeg-static');
 const { CooldownManager } = require('../utils/CooldownManager');
 const { PlayerManager } = require('../player/PlayerManager');
+const { loadYoutubeCookies } = require('../utils/YoutubeCookies');
 
 class BotClient extends Client {
   constructor({ config, logger }) {
@@ -32,13 +33,29 @@ class BotClient extends Client {
     this.commands = new Collection();
     this.cooldowns = new CooldownManager();
 
+    const ytCookies = loadYoutubeCookies({
+      cookiesRaw: this.config.youtubeCookies,
+      cookiesFile: this.config.youtubeCookiesFile,
+    });
+
+    if (ytCookies.length) {
+      this.logger.info('Cookies do YouTube carregados para melhorar extração', { total: ytCookies.length });
+    }
+
     this.distube = new DisTube(this, {
       emitNewSongOnly: true,
       ffmpeg: {
         path: ffmpegPath,
       },
       plugins: [
-        new YouTubePlugin(),
+        new YouTubePlugin({
+          cookies: ytCookies.length ? ytCookies : undefined,
+          ytdlOptions: {
+            quality: 'highestaudio',
+            highWaterMark: 1 << 25,
+            dlChunkSize: 0,
+          },
+        }),
         new SpotifyPlugin(),
       ],
     });

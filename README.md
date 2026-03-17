@@ -83,6 +83,8 @@ GUILD_ID=
 PREFIX=/
 LEAVE_ON_EMPTY_COOLDOWN_MS=120000
 YOUTUBE_API_KEY=
+YOUTUBE_COOKIES=
+YOUTUBE_COOKIES_FILE=
 ```
 
 > `GUILD_ID` é opcional, mas recomendado no desenvolvimento para propagação instantânea dos comandos.
@@ -140,4 +142,11 @@ npm start
 - **Erro `Failed to find any playable formats`**
   - Alguns links podem falhar por restrição do provedor/região/formato.
   - O bot agora tenta fallback automático de busca (`ytsearch`) e resolução via YouTube Data API (quando `YOUTUBE_API_KEY` está configurada).
-  - Se ainda falhar, tente outro link, usar termo de busca, ou vídeo alternativo.
+  - Mesmo com fallback/API/cookies, não existe garantia técnica de 0% erro porque o YouTube muda regras e alguns vídeos são bloqueados por região/idade/direitos.
+  - Para minimizar: use busca textual + API key + cookies atualizados e evite links privados/restritos.
+
+- **YouTube com estabilidade máxima (recomendado)**
+  - Configure `YOUTUBE_API_KEY` para resolver buscas em link antes da reprodução.
+  - Se você tiver cookies do YouTube, preencha `YOUTUBE_COOKIES` **ou** `YOUTUBE_COOKIES_FILE` (formato Netscape exportado por extensão de cookies).
+  - Isso melhora muito casos de bloqueio/idade/região e reduz `Failed to find any playable formats`.
+
