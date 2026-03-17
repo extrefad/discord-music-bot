@@ -23,11 +23,41 @@ class FallbackVoicePlayer {
       query = query.slice(1, -1).trim();
     }
 
+    query = this.extractUrlFromText(query);
+
     if (/^(www\.)?youtube\.com\//i.test(query) || /^youtu\.be\//i.test(query)) {
       query = `https://${query.replace(/^https?:\/\//i, '')}`;
     }
 
     return query;
+  }
+
+
+  extractUrlFromText(text) {
+    const markdownMatch = text.match(/\((https?:\/\/[^)\s]+)\)/i);
+    if (markdownMatch?.[1]) return markdownMatch[1];
+
+    const plainMatch = text.match(/https?:\/\/\S+/i);
+    if (plainMatch?.[0]) return plainMatch[0];
+
+    return text;
+  }
+
+  normalizePlayableUrl(rawUrl) {
+    if (!rawUrl) return null;
+    let candidate = String(rawUrl).trim();
+
+    if (/^(www\.)?youtube\.com\//i.test(candidate) || /^youtu\.be\//i.test(candidate)) {
+      candidate = `https://${candidate.replace(/^https?:\/\//i, '')}`;
+    }
+
+    try {
+      const parsed = new URL(candidate);
+      if (!/^https?:$/.test(parsed.protocol)) return null;
+      return parsed.toString();
+    } catch {
+      return null;
+    }
   }
 
   getOrCreateState(guildId) {
@@ -47,7 +77,8 @@ class FallbackVoicePlayer {
   }
 
   normalizeResolvedTrack(track, requestedBy) {
-    const url = track?.url || (track?.id ? `https://www.youtube.com/watch?v=${track.id}` : null);
+    const rawUrl = track?.url || (track?.id ? `https://www.youtube.com/watch?v=${track.id}` : null);
+    const url = this.normalizePlayableUrl(rawUrl);
 
     if (!url) {
       throw new Error('Falha ao resolver URL da música.');
@@ -145,7 +176,12 @@ class FallbackVoicePlayer {
     }
 
     const nextTrack = state.queue[0];
-    const stream = await play.stream(nextTrack.url, { quality: 2, discordPlayerCompatibility: true });
+    const playableUrl = this.normalizePlayableUrl(nextTrack.url);
+    if (!playableUrl) {
+      throw new Error('URL inválida para reprodução.');
+    }
+
+    const stream = await play.stream(playableUrl, { quality: 2, discordPlayerCompatibility: true });
     const resource = createAudioResource(stream.stream, {
       inputType: stream.type || StreamType.Arbitrary,
       inlineVolume: true,
@@ -157,7 +193,7 @@ class FallbackVoicePlayer {
     state.paused = false;
     state.player.play(resource);
 
-    this.logger.music('Tocando via play-dl', { guildId, title: nextTrack.name, url: nextTrack.url });
+    this.logger.music('Tocando via play-dl', { guildId, title: nextTrack.name, url: playableUrl });
     return true;
   }
 
