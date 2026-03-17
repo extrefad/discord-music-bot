@@ -16,102 +16,160 @@ class FallbackVoicePlayer {
     this.guildStates = new Map();
   }
 
-  async resolveTrack(query) {
+  getOrCreateState(guildId) {
+    if (!this.guildStates.has(guildId)) {
+      this.guildStates.set(guildId, {
+        connection: null,
+        player: null,
+        resource: null,
+        queue: [],
+        current: null,
+        paused: false,
+        volume: 100,
+        loopMode: 'desativado',
+      });
+    }
+    return this.guildStates.get(guildId);
+  }
+
+  async resolveTrack(query, requestedBy) {
     if (play.yt_validate(query) === 'video') {
       const info = await play.video_info(query);
       return {
         url: info.video_details.url,
-        title: info.video_details.title,
-        durationRaw: info.video_details.durationRaw || 'Ao vivo',
+        name: info.video_details.title,
+        formattedDuration: info.video_details.durationRaw || 'Ao vivo',
         thumbnail: info.video_details.thumbnails?.[0]?.url,
+        user: requestedBy,
       };
     }
 
     const results = await play.search(query, { limit: 1, source: { youtube: 'video' } });
     const first = results?.[0];
-    if (!first) throw new Error('Nenhum resultado encontrado no fallback play-dl.');
+    if (!first) throw new Error('Nenhum resultado encontrado no play-dl.');
 
     return {
       url: first.url,
-      title: first.title,
-      durationRaw: first.durationRaw || 'Ao vivo',
+      name: first.title,
+      formattedDuration: first.durationRaw || 'Ao vivo',
       thumbnail: first.thumbnails?.[0]?.url,
+      user: requestedBy,
     };
   }
 
-  async play({ guildId, voiceChannel, query, requestedBy }) {
-    const track = await this.resolveTrack(query);
+  async ensureConnection(guildId, voiceChannel) {
+    const state = this.getOrCreateState(guildId);
 
-    const connection = joinVoiceChannel({
-      channelId: voiceChannel.id,
-      guildId,
-      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-      selfDeaf: true,
-    });
+    if (!state.connection) {
+      state.connection = joinVoiceChannel({
+        channelId: voiceChannel.id,
+        guildId,
+        adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+        selfDeaf: true,
+      });
+      await entersState(state.connection, VoiceConnectionStatus.Ready, 30_000);
+    }
 
-    await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+    if (!state.player) {
+      state.player = createAudioPlayer({
+        behaviors: {
+          noSubscriber: NoSubscriberBehavior.Pause,
+        },
+      });
 
-    const stream = await play.stream(track.url, { quality: 2, discordPlayerCompatibility: true });
+      state.player.on(AudioPlayerStatus.Idle, async () => {
+        await this.handleTrackFinish(guildId);
+      });
 
-    const player = createAudioPlayer({
-      behaviors: {
-        noSubscriber: NoSubscriberBehavior.Pause,
-      },
-    });
+      state.player.on('error', (error) => {
+        this.logger.error('Erro no player play-dl', { guildId, error: error.message });
+        this.stop(guildId);
+      });
 
+      state.connection.subscribe(state.player);
+    }
+
+    return state;
+  }
+
+  async enqueue({ guildId, voiceChannel, query, requestedBy }) {
+    const state = await this.ensureConnection(guildId, voiceChannel);
+    const track = await this.resolveTrack(query, requestedBy);
+
+    state.queue.push(track);
+    const position = state.queue.length;
+
+    if (!state.current) {
+      await this.playNext(guildId);
+      return { track, nowPlaying: true, position: 1 };
+    }
+
+    return { track, nowPlaying: false, position };
+  }
+
+  async playNext(guildId) {
+    const state = this.guildStates.get(guildId);
+    if (!state || !state.queue.length) {
+      this.stop(guildId);
+      return false;
+    }
+
+    const nextTrack = state.queue[0];
+    const stream = await play.stream(nextTrack.url, { quality: 2, discordPlayerCompatibility: true });
     const resource = createAudioResource(stream.stream, {
       inputType: stream.type || StreamType.Arbitrary,
       inlineVolume: true,
     });
+    resource.volume?.setVolume(Math.max(0, Math.min(2, state.volume / 100)));
 
-    resource.volume?.setVolume(1);
+    state.resource = resource;
+    state.current = nextTrack;
+    state.paused = false;
+    state.player.play(resource);
 
-    player.play(resource);
-    connection.subscribe(player);
+    this.logger.music('Tocando via play-dl', { guildId, title: nextTrack.name, url: nextTrack.url });
+    return true;
+  }
 
-    const cleanup = () => {
-      const state = this.guildStates.get(guildId);
-      if (!state) return;
-      state.connection.destroy();
-      this.guildStates.delete(guildId);
-    };
+  async handleTrackFinish(guildId) {
+    const state = this.guildStates.get(guildId);
+    if (!state || !state.current) return;
 
-    player.once(AudioPlayerStatus.Idle, cleanup);
-    player.on('error', (error) => {
-      this.logger.error('Erro no fallback play-dl', { guildId, error: error.message });
-      cleanup();
-    });
+    const finished = state.queue.shift();
 
-    this.guildStates.set(guildId, {
-      connection,
-      player,
-      resource,
-      track: {
-        name: track.title,
-        url: track.url,
-        formattedDuration: track.durationRaw,
-        thumbnail: track.thumbnail,
-        user: requestedBy,
-      },
-      paused: false,
-      volume: 100,
-    });
+    if (state.loopMode === 'musica' && finished) {
+      state.queue.unshift(finished);
+    } else if (state.loopMode === 'fila' && finished) {
+      state.queue.push(finished);
+    }
 
-    this.logger.warn('Modo fallback ativado (play-dl)', { guildId, title: track.title, url: track.url });
-    return track;
+    state.current = null;
+
+    if (!state.queue.length) {
+      this.stop(guildId);
+      return;
+    }
+
+    try {
+      await this.playNext(guildId);
+    } catch (error) {
+      this.logger.error('Falha ao tocar próxima via play-dl', { guildId, error: error.message });
+      this.stop(guildId);
+    }
   }
 
   has(guildId) {
-    return this.guildStates.has(guildId);
+    const state = this.guildStates.get(guildId);
+    return Boolean(state && (state.current || state.queue.length));
   }
 
   getNowPlaying(guildId) {
-    return this.guildStates.get(guildId)?.track || null;
+    return this.guildStates.get(guildId)?.current || null;
   }
 
   pause(guildId) {
     const state = this.guildStates.get(guildId);
-    if (!state) return false;
+    if (!state?.player || !state.current) return false;
     state.player.pause();
     state.paused = true;
     return true;
@@ -119,17 +177,30 @@ class FallbackVoicePlayer {
 
   resume(guildId) {
     const state = this.guildStates.get(guildId);
-    if (!state) return false;
+    if (!state?.player || !state.current) return false;
     state.player.unpause();
     state.paused = false;
+    return true;
+  }
+
+  skip(guildId) {
+    const state = this.guildStates.get(guildId);
+    if (!state?.player || !state.current) return false;
+    state.player.stop();
     return true;
   }
 
   stop(guildId) {
     const state = this.guildStates.get(guildId);
     if (!state) return false;
-    state.player.stop();
-    state.connection.destroy();
+
+    try {
+      state.player?.stop();
+      state.connection?.destroy();
+    } catch {
+      // noop
+    }
+
     this.guildStates.delete(guildId);
     return true;
   }
@@ -137,21 +208,30 @@ class FallbackVoicePlayer {
   setVolume(guildId, volume) {
     const state = this.guildStates.get(guildId);
     if (!state) return false;
-    state.resource.volume?.setVolume(Math.max(0, Math.min(2, volume / 100)));
     state.volume = volume;
+    state.resource?.volume?.setVolume(Math.max(0, Math.min(2, volume / 100)));
     return true;
+  }
+
+  setLoop(guildId, mode) {
+    const state = this.guildStates.get(guildId);
+    if (!state || (!state.current && !state.queue.length)) return null;
+    state.loopMode = mode;
+    return mode;
   }
 
   getQueueSummary(guildId) {
     const state = this.guildStates.get(guildId);
-    if (!state) return null;
+    if (!state || (!state.current && !state.queue.length)) return null;
+
+    const songs = state.current ? [state.current, ...state.queue.slice(1)] : [...state.queue];
 
     return {
       volume: state.volume,
       paused: state.paused,
-      repeatMode: 'desativado',
+      repeatMode: state.loopMode,
       autoplay: false,
-      songs: [state.track],
+      songs,
     };
   }
 }

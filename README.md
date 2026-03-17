@@ -16,9 +16,8 @@ Bot de música para Discord inspirado no comportamento do Jockie Music, executan
 
 - Node.js 22+
 - discord.js v14
-- distube v5
-- @distube/youtube
-- @distube/spotify
+- @discordjs/voice
+- play-dl
 - dotenv
 - ffmpeg-static
 - opusscript
@@ -116,8 +115,7 @@ npm start
 
 ## Modo contingência (play-dl)
 
-- Se o DisTube não conseguir extrair formatos do YouTube, o bot ativa fallback automático com `play-dl`.
-- Nessa situação, o `/tocar` informa que está em contingência.
+- O bot usa `play-dl` como player principal para reduzir falhas de extração no YouTube.
 - Para reduzir erro de conexão em voz, garanta permissões **Conectar** e **Falar** no canal.
 
 ## Observações de produção local (PC como servidor)
@@ -134,27 +132,11 @@ npm start
   - Você ainda não configurou o `.env` corretamente.
   - Preencha `DISCORD_TOKEN` e `CLIENT_ID` (obrigatórios).
 
-- **Erro `DisTubeError [INVALID_KEY]: emitEventsAfterFetching`**
-  - Esse erro era causado por uma opção inválida no plugin do Spotify em versões atuais.
-  - Já foi corrigido no código desta versão (uso de `new SpotifyPlugin()` sem essa chave).
-
-- **Erro `DisTubeError [INVALID_KEY]: leaveOnStop`**
-  - A versão atual do DisTube não aceita mais algumas chaves antigas (`leaveOnStop`, `leaveOnEmpty`, `leaveOnFinish`) em `DisTubeOptions`.
-  - Já foi corrigido no código desta versão removendo essas chaves.
-
-
 - **Aviso sobre `npm audit`**
   - Esses avisos não impedem o bot de iniciar.
   - Só rode `npm audit fix --force` se você aceitar mudanças potencialmente quebráveis nas dependências.
 
-- **Erro `Failed to find any playable formats`**
-  - Alguns links podem falhar por restrição do provedor/região/formato.
-  - O bot agora tenta fallback automático de busca (`ytsearch`) e resolução via YouTube Data API (quando `YOUTUBE_API_KEY` está configurada).
-  - Mesmo com fallback/API/cookies, não existe garantia técnica de 0% erro porque o YouTube muda regras e alguns vídeos são bloqueados por região/idade/direitos.
-  - Para minimizar: use busca textual + API key + cookies atualizados e evite links privados/restritos.
-
-- **YouTube com estabilidade máxima (recomendado)**
-  - Configure `YOUTUBE_API_KEY` para resolver buscas em link antes da reprodução.
-  - Se você tiver cookies do YouTube, preencha `YOUTUBE_COOKIES` **ou** `YOUTUBE_COOKIES_FILE` (formato Netscape exportado por extensão de cookies).
-  - Isso melhora muito casos de bloqueio/idade/região e reduz `Failed to find any playable formats`.
+- **Erro ao conectar no canal de voz (timeout de 30s)**
+  - Verifique se o bot tem permissões **Conectar** e **Falar** no canal.
+  - Verifique se o canal não está lotado.
 

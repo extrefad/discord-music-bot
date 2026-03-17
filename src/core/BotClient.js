@@ -8,13 +8,8 @@ const {
   REST,
   Routes,
 } = require('discord.js');
-const { DisTube } = require('distube');
-const { YouTubePlugin } = require('@distube/youtube');
-const { SpotifyPlugin } = require('@distube/spotify');
-const ffmpegPath = require('ffmpeg-static');
 const { CooldownManager } = require('../utils/CooldownManager');
 const { PlayerManager } = require('../player/PlayerManager');
-const { loadYoutubeCookies } = require('../utils/YoutubeCookies');
 
 class BotClient extends Client {
   constructor({ config, logger }) {
@@ -33,35 +28,7 @@ class BotClient extends Client {
     this.commands = new Collection();
     this.cooldowns = new CooldownManager();
 
-    const ytCookies = loadYoutubeCookies({
-      cookiesRaw: this.config.youtubeCookies,
-      cookiesFile: this.config.youtubeCookiesFile,
-    });
-
-    if (ytCookies.length) {
-      this.logger.info('Cookies do YouTube carregados para melhorar extração', { total: ytCookies.length });
-    }
-
-    this.distube = new DisTube(this, {
-      emitNewSongOnly: true,
-      ffmpeg: {
-        path: ffmpegPath,
-      },
-      plugins: [
-        new YouTubePlugin({
-          cookies: ytCookies.length ? ytCookies : undefined,
-          ytdlOptions: {
-            quality: 'highestaudio',
-            highWaterMark: 1 << 25,
-            dlChunkSize: 0,
-          },
-        }),
-        new SpotifyPlugin(),
-      ],
-    });
-
     this.player = new PlayerManager({
-      distube: this.distube,
       logger: this.logger.child('PLAYER'),
       config,
     });
@@ -70,7 +37,6 @@ class BotClient extends Client {
   async init() {
     await this.loadCommands(path.join(__dirname, '..', 'commands'));
     await this.loadEvents(path.join(__dirname, '..', 'events'));
-    this.attachDisTubeEvents();
     await this.registerSlashCommands();
 
     this.attachProcessHandlers();
@@ -126,33 +92,6 @@ class BotClient extends Client {
 
     await rest.put(route, { body });
     this.logger.info('Slash commands registrados', { total: body.length, scope: this.config.guildId ? 'guild' : 'global' });
-  }
-
-  attachDisTubeEvents() {
-    this.distube
-      .on('playSong', (queue, song) => {
-        this.logger.music('Tocando música', { guildId: queue.id, title: song.name, url: song.url });
-      })
-      .on('addSong', (queue, song) => {
-        this.logger.music('Música adicionada', { guildId: queue.id, title: song.name });
-      })
-      .on('addList', (queue, playlist) => {
-        this.logger.music('Playlist adicionada', { guildId: queue.id, playlist: playlist.name, tracks: playlist.songs.length });
-      })
-      .on('error', (...args) => {
-        const foundError = args.find((arg) => arg instanceof Error);
-        const context = args.find((arg) => arg && typeof arg === 'object' && 'id' in arg);
-        this.logger.error('Erro no DisTube', {
-          error: foundError?.message || 'Erro desconhecido',
-          contextId: context?.id || null,
-        });
-      })
-      .on('finish', (queue) => {
-        this.logger.music('Fila finalizada', { guildId: queue.id });
-      })
-      .on('disconnect', (queue) => {
-        this.logger.warn('Player desconectado', { guildId: queue.id });
-      });
   }
 
   attachProcessHandlers() {

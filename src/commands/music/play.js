@@ -5,7 +5,7 @@ const { ensureVoice } = require('./_shared');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('tocar')
-    .setDescription('Toca uma música por nome ou link (YouTube/Spotify).')
+    .setDescription('Toca uma música por nome ou link (YouTube).')
     .addStringOption((opt) => opt.setName('busca').setDescription('Nome da música ou link').setRequired(true)),
   cooldownMs: 3000,
   async execute(interaction, client) {
@@ -23,12 +23,12 @@ module.exports = {
         query,
       });
 
-      const detalhe = result?.mode === 'fallback'
-        ? '\n⚠️ Reprodução em modo de contingência (play-dl).'
-        : '';
+      const suffix = result.nowPlaying
+        ? '\n▶️ Iniciando reprodução agora.'
+        : `\n📌 Entrou na fila na posição **${result.position}**.`;
 
       await interaction.editReply({
-        embeds: [EmbedFactory.success('✅ Adicionado à fila', `Busca: **${query}**${detalhe}`)],
+        embeds: [EmbedFactory.success('✅ Música adicionada', `Busca: **${query}**${suffix}`)],
       });
     } catch (error) {
       client.logger.error('Falha no /tocar', { error: error?.message || 'Erro desconhecido' });
@@ -36,7 +36,7 @@ module.exports = {
         embeds: [
           EmbedFactory.error(
             '❌ Não foi possível tocar',
-            'Não consegui reproduzir esse link/busca agora. Tente outro vídeo, outro termo ou repita em alguns segundos.',
+            'Não consegui reproduzir essa música agora. Verifique permissões de voz e tente outro vídeo/termo.',
           ),
         ],
       });
