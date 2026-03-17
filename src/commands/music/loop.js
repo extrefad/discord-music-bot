@@ -2,34 +2,34 @@ const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 const modeLabels = {
-  off: 'Desativado',
-  song: 'Música atual',
-  queue: 'Fila',
+  desativado: 'Desativado',
+  musica: 'Música atual',
+  fila: 'Fila',
 };
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('loop')
-    .setDescription('Define o modo de loop.')
+    .setName('repetir')
+    .setDescription('Define o modo de repetição.')
     .addStringOption((opt) =>
       opt
-        .setName('mode')
-        .setDescription('Modo do loop')
+        .setName('modo')
+        .setDescription('Modo da repetição')
         .setRequired(true)
         .addChoices(
-          { name: 'Off', value: 'off' },
-          { name: 'Song', value: 'song' },
-          { name: 'Queue', value: 'queue' },
+          { name: 'Desativado', value: 'desativado' },
+          { name: 'Música', value: 'musica' },
+          { name: 'Fila', value: 'fila' },
         ),
     ),
   async execute(interaction, client) {
-    const mode = interaction.options.getString('mode', true);
+    const mode = interaction.options.getString('modo', true);
     const value = client.player.setLoop(interaction.guildId, mode);
     if (value === null) {
-      await interaction.reply({ embeds: [EmbedFactory.warning('Fila vazia', 'Inicie uma música antes de alterar loop.')], flags: MessageFlags.Ephemeral });
+      await interaction.reply({ embeds: [EmbedFactory.warning('Fila vazia', 'Inicie uma música antes de alterar repetição.')], flags: MessageFlags.Ephemeral });
       return;
     }
 
-    await interaction.reply({ embeds: [EmbedFactory.success('🔁 Loop', `Modo alterado para **${modeLabels[mode]}**.`)] });
+    await interaction.reply({ embeds: [EmbedFactory.success('🔁 Repetição', `Modo alterado para **${modeLabels[mode]}**.`)] });
   },
 };

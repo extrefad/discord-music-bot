@@ -2,7 +2,7 @@ const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 module.exports = {
-  data: new SlashCommandBuilder().setName('queue').setDescription('Mostra a fila atual.'),
+  data: new SlashCommandBuilder().setName('fila').setDescription('Mostra a fila atual.'),
   async execute(interaction, client) {
     const queue = client.player.getQueue(interaction.guildId);
     if (!queue || !queue.songs.length) {
@@ -11,13 +11,13 @@ module.exports = {
     }
 
     const lines = queue.songs.slice(0, 10).map((song, index) => {
-      if (index === 0) return `**Agora:** ${song.name} (${song.formattedDuration || 'Live'})`;
-      return `**${index}.** ${song.name} (${song.formattedDuration || 'Live'})`;
+      if (index === 0) return `**Agora:** ${song.name} (${song.formattedDuration || 'Ao vivo'})`;
+      return `**${index}.** ${song.name} (${song.formattedDuration || 'Ao vivo'})`;
     }).join('\n');
 
     await interaction.reply({
       embeds: [
-        EmbedFactory.base('📜 Queue', lines)
+        EmbedFactory.base('📜 Fila', lines)
           .addFields(
             { name: 'Volume', value: `${queue.volume}%`, inline: true },
             { name: 'Loop', value: `${queue.repeatMode}`, inline: true },

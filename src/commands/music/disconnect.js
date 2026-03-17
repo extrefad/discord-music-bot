@@ -2,7 +2,7 @@ const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 module.exports = {
-  data: new SlashCommandBuilder().setName('disconnect').setDescription('Desconecta o bot do canal de voz.'),
+  data: new SlashCommandBuilder().setName('sair').setDescription('Desconecta o bot do canal de voz.'),
   async execute(interaction, client) {
     const ok = client.player.disconnect(interaction.guildId);
     if (!ok) {

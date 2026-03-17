@@ -2,7 +2,7 @@ const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 module.exports = {
-  data: new SlashCommandBuilder().setName('nowplaying').setDescription('Mostra a música atual.'),
+  data: new SlashCommandBuilder().setName('tocando').setDescription('Mostra a música atual.'),
   async execute(interaction, client) {
     const song = client.player.getNowPlaying(interaction.guildId);
     if (!song) {

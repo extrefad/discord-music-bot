@@ -2,7 +2,7 @@ const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 module.exports = {
-  data: new SlashCommandBuilder().setName('shuffle').setDescription('Embaralha a fila.'),
+  data: new SlashCommandBuilder().setName('embaralhar').setDescription('Embaralha a fila.'),
   async execute(interaction, client) {
     const ok = client.player.shuffle(interaction.guildId);
     if (!ok) {
@@ -10,6 +10,6 @@ module.exports = {
       return;
     }
 
-    await interaction.reply({ embeds: [EmbedFactory.success('🔀 Shuffle', 'Fila embaralhada com sucesso.')] });
+    await interaction.reply({ embeds: [EmbedFactory.success('🔀 Embaralhado', 'Fila embaralhada com sucesso.')] });
   },
 };

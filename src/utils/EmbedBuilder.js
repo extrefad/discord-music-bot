@@ -22,10 +22,10 @@ class EmbedFactory {
   }
 
   static nowPlaying(song, requestedBy) {
-    const embed = this.base('🎵 Now Playing', `[${song.name}](${song.url})`, Colors.Blue)
+    const embed = this.base('🎵 Tocando agora', `[${song.name}](${song.url})`, Colors.Blue)
       .addFields(
-        { name: 'Duration', value: song.formattedDuration || 'Live', inline: true },
-        { name: 'Requested by', value: requestedBy || song.user?.toString() || 'Unknown', inline: true },
+        { name: 'Duração', value: song.formattedDuration || 'Ao vivo', inline: true },
+        { name: 'Pedido por', value: requestedBy || song.user?.toString() || 'Desconhecido', inline: true },
       )
       .setThumbnail(song.thumbnail || null);
 

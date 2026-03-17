@@ -95,18 +95,18 @@ npm start
 
 ## Comandos
 
-- `/play query:<nome/link>`
-- `/pause`
-- `/resume`
-- `/skip`
-- `/stop`
-- `/queue`
-- `/nowplaying`
-- `/volume value:<1-150>`
-- `/loop mode:<off|song|queue>`
-- `/shuffle`
-- `/disconnect`
-- `/help`
+- `/tocar busca:<nome/link>`
+- `/pausar`
+- `/retomar`
+- `/pular`
+- `/parar`
+- `/fila`
+- `/tocando`
+- `/volume nivel:<1-150>`
+- `/repetir modo:<desativado|musica|fila>`
+- `/embaralhar`
+- `/sair`
+- `/ajuda`
 - `/ping`
 
 ## Observações de produção local (PC como servidor)
@@ -131,3 +131,12 @@ npm start
   - A versão atual do DisTube não aceita mais algumas chaves antigas (`leaveOnStop`, `leaveOnEmpty`, `leaveOnFinish`) em `DisTubeOptions`.
   - Já foi corrigido no código desta versão removendo essas chaves.
 
+
+- **Aviso sobre `npm audit`**
+  - Esses avisos não impedem o bot de iniciar.
+  - Só rode `npm audit fix --force` se você aceitar mudanças potencialmente quebráveis nas dependências.
+
+- **Erro `Failed to find any playable formats`**
+  - Alguns links podem falhar por restrição do provedor/região/formato.
+  - O bot agora tenta um fallback automático de busca (`ytsearch`) antes de desistir.
+  - Se ainda falhar, tente outro link, usar termo de busca, ou vídeo alternativo.

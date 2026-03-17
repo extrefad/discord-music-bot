@@ -2,7 +2,7 @@ const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { EmbedFactory } = require('../../utils/EmbedBuilder');
 
 module.exports = {
-  data: new SlashCommandBuilder().setName('pause').setDescription('Pausa a reprodução atual.'),
+  data: new SlashCommandBuilder().setName('pausar').setDescription('Pausa a reprodução atual.'),
   async execute(interaction, client) {
     const ok = client.player.pause(interaction.guildId);
     if (!ok) {
