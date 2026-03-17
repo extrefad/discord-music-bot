@@ -82,6 +82,7 @@ CLIENT_ID=
 GUILD_ID=
 PREFIX=/
 LEAVE_ON_EMPTY_COOLDOWN_MS=120000
+YOUTUBE_API_KEY=
 ```
 
 > `GUILD_ID` é opcional, mas recomendado no desenvolvimento para propagação instantânea dos comandos.
@@ -138,5 +139,5 @@ npm start
 
 - **Erro `Failed to find any playable formats`**
   - Alguns links podem falhar por restrição do provedor/região/formato.
-  - O bot agora tenta um fallback automático de busca (`ytsearch`) antes de desistir.
+  - O bot agora tenta fallback automático de busca (`ytsearch`) e resolução via YouTube Data API (quando `YOUTUBE_API_KEY` está configurada).
   - Se ainda falhar, tente outro link, usar termo de busca, ou vídeo alternativo.

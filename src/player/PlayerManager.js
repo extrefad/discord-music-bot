@@ -13,19 +13,20 @@ class PlayerManager {
   async play({ voiceChannel, textChannel, member, query }) {
     const normalized = SearchManager.normalizeQuery(query);
     const source = SearchManager.detectSource(normalized);
+    const resolved = await SearchManager.resolveQuery(normalized, this.config, this.logger);
 
-    const attempts = [normalized];
+    const attempts = [resolved];
 
-    if (source === 'search' && !/^ytsearch:/i.test(normalized)) {
+    if (source === 'search' && !/^ytsearch:/i.test(resolved)) {
       attempts.push(`ytsearch:${normalized}`);
     }
 
-    if (source === 'youtube' && /^https?:\/\//i.test(normalized)) {
-      attempts.push(normalized.replace(/^https?:\/\/(www\.)?/i, ''));
+    if (source === 'youtube' && /^https?:\/\//i.test(resolved)) {
+      attempts.push(resolved.replace(/^https?:\/\/(www\.)?/i, ''));
     }
 
     if (source === 'youtube') {
-      const idMatch = normalized.match(/[?&]v=([^&]+)/) || normalized.match(/youtu\.be\/([^?&]+)/);
+      const idMatch = resolved.match(/[?&]v=([^&]+)/) || resolved.match(/youtu\.be\/([^?&]+)/);
       if (idMatch?.[1]) {
         attempts.push(`ytsearch:${idMatch[1]}`);
       }
@@ -33,7 +34,7 @@ class PlayerManager {
 
     let lastError = null;
 
-    for (const attempt of attempts) {
+    for (const attempt of [...new Set(attempts)]) {
       try {
         await this.distube.play(voiceChannel, attempt, {
           textChannel,

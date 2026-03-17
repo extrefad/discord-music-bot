@@ -16,6 +16,7 @@ class Config {
 
     this.guildId = process.env.GUILD_ID || '';
     this.prefix = process.env.PREFIX || '/';
+    this.youtubeApiKey = process.env.YOUTUBE_API_KEY || '';
     this.leaveOnEmptyCooldownMs = Number(process.env.LEAVE_ON_EMPTY_COOLDOWN_MS || 120000);
   }
 
