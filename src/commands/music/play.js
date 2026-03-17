@@ -5,8 +5,8 @@ const { ensureVoice } = require('./_shared');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('tocar')
-    .setDescription('Toca uma música por nome ou link (YouTube).')
-    .addStringOption((opt) => opt.setName('busca').setDescription('Nome da música ou link').setRequired(true)),
+    .setDescription('Toca uma música por nome, ID ou link (YouTube/Spotify/SoundCloud).')
+    .addStringOption((opt) => opt.setName('busca').setDescription('Nome da música, ID ou link').setRequired(true)),
   cooldownMs: 3000,
   async execute(interaction, client) {
     const voiceChannel = await ensureVoice(interaction);
@@ -27,16 +27,19 @@ module.exports = {
         ? '\n▶️ Iniciando reprodução agora.'
         : `\n📌 Entrou na fila na posição **${result.position}**.`;
 
+      const extra = result.addedCount > 1 ? `\n📚 ${result.addedCount} faixa(s) adicionadas.` : '';
+      const sourceMessage = result.sourceMessage || 'Reproduzindo via busca';
+
       await interaction.editReply({
-        embeds: [EmbedFactory.success('✅ Música adicionada', `Busca: **${query}**${suffix}`)],
+        embeds: [EmbedFactory.success('✅ Música adicionada', `${sourceMessage}\nBusca: **${query}**${suffix}${extra}`)],
       });
     } catch (error) {
       client.logger.error('Falha no /tocar', { error: error?.message || 'Erro desconhecido' });
       await interaction.editReply({
         embeds: [
           EmbedFactory.error(
-            '❌ Não foi possível tocar',
-            'Não consegui reproduzir essa música agora. Verifique permissões de voz e tente outro vídeo/termo.',
+            '❌ Não foi possível reproduzir',
+            'Não foi possível reproduzir. Verifique permissões de voz e tente outro vídeo/termo/link.',
           ),
         ],
       });

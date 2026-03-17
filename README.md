@@ -95,6 +95,15 @@ npm install
 npm start
 ```
 
+## Suporte multi-fonte no /tocar
+
+- URL YouTube completa (`https://www.youtube.com/watch?v=ID`)
+- URL YouTube curta (`https://youtu.be/ID`)
+- ID de vídeo YouTube (`thySBmzQjM0`)
+- Busca por texto simples (`MTG LOST TIME DJ LZIN`)
+- Link Spotify (faixa/playlist/álbum)
+- Link SoundCloud (faixa/playlist)
+
 ## Comandos
 
 - `/tocar busca:<nome/link>`
@@ -138,3 +147,5 @@ npm start
   - Verifique se o bot tem permissões **Conectar** e **Falar** no canal.
   - Verifique se o canal não está lotado.
 
+
+- O `/tocar` informa automaticamente a origem: `Reproduzindo via YouTube`, `Reproduzindo via Spotify`, `Reproduzindo via SoundCloud` ou `Reproduzindo via busca`.

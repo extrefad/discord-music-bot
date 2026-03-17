@@ -11,8 +11,9 @@ const {
 const play = require('play-dl');
 
 class FallbackVoicePlayer {
-  constructor({ logger }) {
+  constructor({ logger, config }) {
     this.logger = logger;
+    this.config = config;
     this.guildStates = new Map();
   }
 
@@ -31,7 +32,6 @@ class FallbackVoicePlayer {
 
     return query;
   }
-
 
   extractUrlFromText(text) {
     const markdownMatch = text.match(/\((https?:\/\/[^)\s]+)\)/i);
@@ -60,6 +60,10 @@ class FallbackVoicePlayer {
     }
   }
 
+  isLikelyYoutubeId(input) {
+    return /^[a-zA-Z0-9_-]{11}$/.test(input);
+  }
+
   getOrCreateState(guildId) {
     if (!this.guildStates.has(guildId)) {
       this.guildStates.set(guildId, {
@@ -76,7 +80,7 @@ class FallbackVoicePlayer {
     return this.guildStates.get(guildId);
   }
 
-  normalizeResolvedTrack(track, requestedBy) {
+  normalizeResolvedTrack(track, requestedBy, source = 'busca') {
     const rawUrl = track?.url || (track?.id ? `https://www.youtube.com/watch?v=${track.id}` : null);
     const url = this.normalizePlayableUrl(rawUrl);
 
@@ -86,36 +90,114 @@ class FallbackVoicePlayer {
 
     return {
       url,
-      name: track?.title || 'Desconhecido',
+      name: track?.title || track?.name || 'Desconhecido',
       formattedDuration: track?.durationRaw || 'Ao vivo',
       thumbnail: track?.thumbnails?.[0]?.url,
       user: requestedBy,
+      source,
     };
   }
 
-  async resolveTrack(query, requestedBy) {
-    const cleanedQuery = this.sanitizeQuery(query);
+  async resolveFromYouTubeUrl(url, requestedBy) {
+    const info = await play.video_basic_info(url);
+    return this.normalizeResolvedTrack(info?.video_details, requestedBy, 'youtube');
+  }
 
-    if (!cleanedQuery) throw new Error('Busca vazia.');
+  async resolveFromTextSearch(term, requestedBy, source = 'busca') {
+    const results = await play.search(term, { limit: 1, source: { youtube: 'video' } });
+    const first = results?.[0];
+    if (!first) throw new Error('Nenhum resultado encontrado na busca.');
+    return this.normalizeResolvedTrack(first, requestedBy, source);
+  }
 
-    if (play.yt_validate(cleanedQuery) === 'video') {
+  async resolveSpotifyInput(url, requestedBy) {
+    const validated = play.sp_validate(url);
+    if (!validated) throw new Error('Link do Spotify inválido.');
+
+    const spotifyObject = await play.spotify(url);
+
+    if (validated === 'track') {
+      const term = `${spotifyObject.name} ${spotifyObject.artists?.map((a) => a.name).join(' ')}`;
+      return [await this.resolveFromTextSearch(term, requestedBy, 'spotify')];
+    }
+
+    const tracks = await spotifyObject.fetch();
+    const list = Array.isArray(tracks) ? tracks : spotifyObject.all_tracks || [];
+    const limited = list.slice(0, 50);
+
+    const resolved = [];
+    for (const item of limited) {
+      const term = `${item.name} ${item.artists?.map((a) => a.name).join(' ')}`;
       try {
-        const info = await play.video_basic_info(cleanedQuery);
-        const details = info?.video_details;
-        return this.normalizeResolvedTrack(details, requestedBy);
+        resolved.push(await this.resolveFromTextSearch(term, requestedBy, 'spotify'));
       } catch (error) {
-        this.logger.warn('Falha em video_basic_info, tentando busca fallback', {
-          query: cleanedQuery,
-          error: error?.message || 'Erro desconhecido',
-        });
+        this.logger.warn('Falha ao resolver faixa do Spotify', { term, error: error.message });
       }
     }
 
-    const results = await play.search(cleanedQuery, { limit: 1, source: { youtube: 'video' } });
-    const first = results?.[0];
-    if (!first) throw new Error('Nenhum resultado encontrado no play-dl.');
+    if (!resolved.length) throw new Error('Não foi possível resolver faixas do Spotify.');
+    return resolved;
+  }
 
-    return this.normalizeResolvedTrack(first, requestedBy);
+  async resolveSoundCloudInput(url, requestedBy) {
+    const soType = await play.so_validate(url);
+    if (!soType) throw new Error('Link do SoundCloud inválido.');
+
+    const scObject = await play.soundcloud(url);
+
+    if (soType === 'track') {
+      return [this.normalizeResolvedTrack(scObject, requestedBy, 'soundcloud')];
+    }
+
+    const tracks = scObject?.tracks || [];
+    const limited = tracks.slice(0, 50).map((track) => this.normalizeResolvedTrack(track, requestedBy, 'soundcloud'));
+    if (!limited.length) throw new Error('Playlist do SoundCloud sem faixas válidas.');
+    return limited;
+  }
+
+  async resolveInput(query, requestedBy) {
+    const cleaned = this.sanitizeQuery(query);
+    if (!cleaned) throw new Error('Busca vazia.');
+
+    if (this.isLikelyYoutubeId(cleaned)) {
+      const track = await this.resolveFromYouTubeUrl(`https://www.youtube.com/watch?v=${cleaned}`, requestedBy);
+      return { tracks: [track], sourceMessage: 'Reproduzindo via YouTube' };
+    }
+
+    const normalizedUrl = this.normalizePlayableUrl(cleaned);
+
+    if (normalizedUrl) {
+      const validation = await play.validate(normalizedUrl);
+
+      if (validation?.startsWith('yt_')) {
+        if (validation === 'yt_playlist') {
+          const playlist = await play.playlist_info(normalizedUrl, { incomplete: true });
+          const videos = playlist?.videos?.slice(0, 50) || [];
+          const tracks = videos.map((video) => this.normalizeResolvedTrack(video, requestedBy, 'youtube'));
+          if (!tracks.length) throw new Error('Playlist do YouTube sem faixas válidas.');
+          return { tracks, sourceMessage: 'Reproduzindo via YouTube' };
+        }
+
+        const track = await this.resolveFromYouTubeUrl(normalizedUrl, requestedBy);
+        return { tracks: [track], sourceMessage: 'Reproduzindo via YouTube' };
+      }
+
+      if (validation?.startsWith('sp_')) {
+        const tracks = await this.resolveSpotifyInput(normalizedUrl, requestedBy);
+        return { tracks, sourceMessage: 'Reproduzindo via Spotify' };
+      }
+
+      if (validation?.startsWith('so_')) {
+        const tracks = await this.resolveSoundCloudInput(normalizedUrl, requestedBy);
+        return { tracks, sourceMessage: 'Reproduzindo via SoundCloud' };
+      }
+
+      const track = await this.resolveFromTextSearch(normalizedUrl, requestedBy, 'busca');
+      return { tracks: [track], sourceMessage: 'Reproduzindo via busca' };
+    }
+
+    const track = await this.resolveFromTextSearch(cleaned, requestedBy, 'busca');
+    return { tracks: [track], sourceMessage: 'Reproduzindo via busca' };
   }
 
   async ensureConnection(guildId, voiceChannel) {
@@ -155,17 +237,19 @@ class FallbackVoicePlayer {
 
   async enqueue({ guildId, voiceChannel, query, requestedBy }) {
     const state = await this.ensureConnection(guildId, voiceChannel);
-    const track = await this.resolveTrack(query, requestedBy);
+    const { tracks, sourceMessage } = await this.resolveInput(query, requestedBy);
 
-    state.queue.push(track);
-    const position = state.queue.length;
+    const firstTrack = tracks[0];
+    for (const track of tracks) state.queue.push(track);
+
+    const position = state.queue.length - tracks.length + 1;
 
     if (!state.current) {
       await this.playNext(guildId);
-      return { track, nowPlaying: true, position: 1 };
+      return { track: firstTrack, nowPlaying: true, position: 1, sourceMessage, addedCount: tracks.length };
     }
 
-    return { track, nowPlaying: false, position };
+    return { track: firstTrack, nowPlaying: false, position, sourceMessage, addedCount: tracks.length };
   }
 
   async playNext(guildId) {
@@ -193,7 +277,7 @@ class FallbackVoicePlayer {
     state.paused = false;
     state.player.play(resource);
 
-    this.logger.music('Tocando via play-dl', { guildId, title: nextTrack.name, url: playableUrl });
+    this.logger.music('Tocando via play-dl', { guildId, title: nextTrack.name, url: playableUrl, source: nextTrack.source });
     return true;
   }
 

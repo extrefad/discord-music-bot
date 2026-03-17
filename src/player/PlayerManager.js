@@ -1,9 +1,9 @@
 const { FallbackVoicePlayer } = require('./FallbackVoicePlayer');
 
 class PlayerManager {
-  constructor({ logger }) {
+  constructor({ logger, config }) {
     this.logger = logger;
-    this.fallback = new FallbackVoicePlayer({ logger });
+    this.fallback = new FallbackVoicePlayer({ logger, config });
   }
 
   async play({ voiceChannel, member, query }) {
