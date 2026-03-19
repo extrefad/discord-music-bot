@@ -76,6 +76,7 @@ class FallbackVoicePlayer {
         player: null,
         resource: null,
         queue: [],
+        history: [],
         current: null,
         paused: false,
         volume: 100,
@@ -274,6 +275,11 @@ class FallbackVoicePlayer {
     }
 
     const nextTrack = state.queue[0];
+    if (state.current && state.current.url !== nextTrack.url) {
+      state.history.push(state.current);
+      if (state.history.length > 30) state.history.shift();
+    }
+
     const playableUrl = this.normalizePlayableUrl(nextTrack.url);
     if (!playableUrl) {
       throw new Error('URL inválida para reprodução.');
@@ -354,6 +360,57 @@ class FallbackVoicePlayer {
     return true;
   }
 
+  replay(guildId) {
+    const state = this.guildStates.get(guildId);
+    if (!state?.player || !state.current) return false;
+    state.queue.unshift(state.current);
+    state.player.stop();
+    return true;
+  }
+
+  playPrevious(guildId) {
+    const state = this.guildStates.get(guildId);
+    if (!state?.player || !state.current || !state.history.length) return false;
+
+    const previous = state.history.pop();
+    state.queue.unshift(previous);
+    state.player.stop();
+    return previous;
+  }
+
+  removeAt(guildId, position) {
+    const state = this.guildStates.get(guildId);
+    if (!state || !Array.isArray(state.queue)) return null;
+
+    const normalized = Number(position);
+    if (!Number.isInteger(normalized) || normalized < 1) return null;
+    if (normalized >= state.queue.length) return null;
+
+    const [removed] = state.queue.splice(normalized, 1);
+    return removed || null;
+  }
+
+  clearQueue(guildId) {
+    const state = this.guildStates.get(guildId);
+    if (!state || state.queue.length <= 1) return false;
+    state.queue = [state.queue[0]];
+    return true;
+  }
+
+  skipTo(guildId, position) {
+    const state = this.guildStates.get(guildId);
+    if (!state?.player || !state.current) return null;
+
+    const normalized = Number(position);
+    if (!Number.isInteger(normalized) || normalized < 1) return null;
+    if (normalized >= state.queue.length) return null;
+
+    const target = state.queue[normalized];
+    state.queue.splice(1, normalized - 1);
+    state.player.stop();
+    return target;
+  }
+
   stop(guildId) {
     const state = this.guildStates.get(guildId);
     if (!state) return false;
@@ -395,6 +452,7 @@ class FallbackVoicePlayer {
       paused: state.paused,
       repeatMode: state.loopMode,
       autoplay: false,
+      historyCount: state.history.length,
       songs,
     };
   }

@@ -22,6 +22,7 @@ module.exports = {
             { name: 'Volume', value: `${queue.volume}%`, inline: true },
             { name: 'Loop', value: `${queue.repeatMode}`, inline: true },
             { name: 'Total', value: `${queue.songs.length} músicas`, inline: true },
+            { name: 'Histórico', value: `${queue.historyCount || 0}`, inline: true },
           ),
       ],
     });

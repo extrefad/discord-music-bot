@@ -110,9 +110,14 @@ npm start
 - `/pausar`
 - `/retomar`
 - `/pular`
+- `/pularpara posicao:<n>`
 - `/parar`
 - `/fila`
+- `/remover posicao:<n>`
+- `/limparfila`
 - `/tocando`
+- `/anterior`
+- `/repetiratual`
 - `/volume nivel:<1-150>`
 - `/repetir modo:<desativado|musica|fila>`
 - `/embaralhar`

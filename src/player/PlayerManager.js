@@ -76,6 +76,26 @@ class PlayerManager {
   getNowPlaying(guildId) {
     return this.fallback.getNowPlaying(guildId);
   }
+
+  replay(guildId) {
+    return this.fallback.replay(guildId);
+  }
+
+  previous(guildId) {
+    return this.fallback.playPrevious(guildId);
+  }
+
+  remove(guildId, position) {
+    return this.fallback.removeAt(guildId, position);
+  }
+
+  clear(guildId) {
+    return this.fallback.clearQueue(guildId);
+  }
+
+  skipTo(guildId, position) {
+    return this.fallback.skipTo(guildId, position);
+  }
 }
 
 module.exports = { PlayerManager };
